@@ -43,11 +43,38 @@ export default function Message({
 
   const avatarLetter = (otherUser?.username || "U").charAt(0).toUpperCase();
 
-  // ✅ Countdown bis message verschwindet
+  // ✅ Countdown bis message verschwindet:
+  // 1) Wenn expiresAt vorhanden -> nutzen
+  // 2) Sonst aus createdAt + destructTimer (Sekunden) berechnen (damit Empfänger auch Countdown sieht)
   const expiresAtMs = useMemo(() => {
-    const ms = toMs(message?.expiresAt);
-    return ms > 0 ? ms : 0;
-  }, [message?.expiresAt]);
+    const expRaw =
+      message?.expiresAt ??
+      message?.expires_at ??
+      message?.expiresAtIso ??
+      message?.expiresAtISO;
+
+    const expMs = toMs(expRaw);
+    if (expMs > 0) return expMs;
+
+    const createdMs = toMs(message?.createdAt);
+    if (!createdMs) return 0;
+
+    let dt = Number(message?.destructTimer ?? message?.destruct_timer ?? 0);
+    if (!Number.isFinite(dt) || dt <= 0) return 0;
+
+    // falls mal ms statt sec kommen
+    if (dt > 100000) dt = Math.floor(dt / 1000);
+
+    return createdMs + dt * 1000;
+  }, [
+    message?.expiresAt,
+    message?.expires_at,
+    message?.expiresAtIso,
+    message?.expiresAtISO,
+    message?.createdAt,
+    message?.destructTimer,
+    message?.destruct_timer,
+  ]);
 
   const [now, setNow] = useState(() => Date.now());
 
@@ -103,7 +130,7 @@ export default function Message({
           )}
         </div>
 
-        {/* ✅ Countdown unter der Bubble */}
+        {/* ✅ Countdown unter der Bubble (für Sender UND Empfänger) */}
         {showCountdown && (
           <div className={`mt-1 text-xs ${isOwn ? "text-destructive text-right" : "text-destructive"}`}>
             {formatRemaining(remainingMs)}
