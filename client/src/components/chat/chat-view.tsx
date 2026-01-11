@@ -31,7 +31,6 @@ export default function ChatView({
   const [messageInput, setMessageInput] = useState("");
   const [destructTimer, setDestructTimer] = useState("300"); // seconds
 
-  // local typing control
   const localTypingRef = useRef(false);
   const typingIdleTimerRef = useRef<any>(null);
   const typingThrottleRef = useRef<number>(0);
@@ -42,10 +41,7 @@ export default function ChatView({
 
   const scrollToBottom = (smooth = true) => {
     if (!messagesEndRef.current) return;
-    messagesEndRef.current.scrollIntoView({
-      behavior: smooth ? "smooth" : "auto",
-      block: "end",
-    });
+    messagesEndRef.current.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "end" });
   };
 
   useEffect(() => {
@@ -84,7 +80,6 @@ export default function ChatView({
 
   const startOrRefreshTyping = () => {
     const now = Date.now();
-    // keep-alive: sende typing:true max alle 2s während man weiter tippt
     if (!localTypingRef.current || now - typingThrottleRef.current > 2000) {
       localTypingRef.current = true;
       typingThrottleRef.current = now;
@@ -106,12 +101,9 @@ export default function ChatView({
     startOrRefreshTyping();
 
     if (typingIdleTimerRef.current) clearTimeout(typingIdleTimerRef.current);
-    typingIdleTimerRef.current = setTimeout(() => {
-      stopTyping();
-    }, 1200);
+    typingIdleTimerRef.current = setTimeout(() => stopTyping(), 1200);
   };
 
-  // stop typing when switching chats/unmount
   useEffect(() => {
     stopTyping();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -139,6 +131,7 @@ export default function ChatView({
     }
   };
 
+  // ✅ FIX: Dateien NICHT als Base64 über WS -> wir geben File weiter, Hook lädt hoch
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -157,15 +150,9 @@ export default function ChatView({
     const secs = getTimerSeconds();
 
     if (file.type.startsWith("image/")) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const base64 = reader.result as string;
-        onSendMessage(base64, "image", secs, file);
-      };
-      reader.onerror = () => alert(t("failedToReadFile"));
-      reader.readAsDataURL(file);
+      onSendMessage("", "image", secs, file);
     } else {
-      onSendMessage(`📎 ${file.name}`, "file", secs, file);
+      onSendMessage(file.name, "file", secs, file);
     }
 
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -181,8 +168,8 @@ export default function ChatView({
     cameraInput.accept = "image/*";
     // @ts-ignore
     cameraInput.capture = "environment";
-    cameraInput.onchange = (e) => {
-      const f = (e.target as HTMLInputElement).files?.[0];
+    cameraInput.onchange = (ev) => {
+      const f = (ev.target as HTMLInputElement).files?.[0];
       if (!f) return;
       handleFileUpload({ target: { files: [f] } } as any);
     };
@@ -290,7 +277,6 @@ export default function ChatView({
           <Message key={m.id} message={m} isOwn={m.senderId === currentUser.id} otherUser={selectedChat.otherUser} />
         ))}
 
-        {/* ✅ Typing bubble */}
         {isOtherTyping && (
           <div className="flex items-start gap-2">
             <div className="w-8 h-8 bg-muted rounded-full flex items-center justify-center flex-shrink-0">
@@ -309,7 +295,7 @@ export default function ChatView({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Bar */}
+      {/* Input */}
       <div className="chat-input-fixed chat-input-area">
         <div className="px-2 py-2 flex items-end gap-2 flex-nowrap">
           <Button
