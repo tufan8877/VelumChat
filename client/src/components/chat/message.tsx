@@ -28,8 +28,17 @@ export default function Message({
     ? "bg-blue-600 text-white rounded-2xl rounded-tr-md"
     : "bg-surface text-foreground rounded-2xl rounded-tl-md";
 
+  const avatarLetter = (otherUser?.username || "U").charAt(0).toUpperCase();
+
   return (
-    <div className={`flex ${isOwn ? "justify-end" : "justify-start"}`}>
+    <div className={`flex ${isOwn ? "justify-end" : "justify-start"} items-end gap-2`}>
+      {/* ✅ Avatar nur bei empfangenen Nachrichten */}
+      {!isOwn && (
+        <div className="w-8 h-8 bg-muted rounded-full flex items-center justify-center flex-shrink-0">
+          <span className="text-muted-foreground text-sm font-semibold">{avatarLetter}</span>
+        </div>
+      )}
+
       <div className={`max-w-[78%] md:max-w-[60%] p-3 ${bubbleClass}`}>
         {type === "image" ? (
           <div className="space-y-2">
