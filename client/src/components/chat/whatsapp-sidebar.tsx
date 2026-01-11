@@ -37,7 +37,7 @@ interface WhatsAppSidebarProps {
   // ✅ Typing status je Chat
   typingByChat?: Map<number, boolean>;
 
-  // ✅ Delete chat (kommt aus usePersistentChats)
+  // ✅ Delete chat
   onDeleteChat: (chatId: number) => Promise<void> | void;
 
   // optional: block
@@ -137,7 +137,7 @@ export default function WhatsAppSidebar({
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
 
-    if (diffMins < 1) return t("now");
+    if (diffMins < 1) return t("now"); // "jetzt"
     if (diffMins < 60) return `${diffMins}m`;
     if (diffHours < 24) return `${diffHours}h`;
     if (diffDays < 7) return `${diffDays}d`;
@@ -209,7 +209,7 @@ export default function WhatsAppSidebar({
           </div>
         </div>
 
-        {/* Search Chats */}
+        {/* Search */}
         <div className="p-3 bg-background">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground z-10 pointer-events-none" />
@@ -237,12 +237,7 @@ export default function WhatsAppSidebar({
               </div>
               <h3 className="font-semibold text-foreground mb-2">{t("noChats")}</h3>
               <p className="text-sm text-muted-foreground mb-4">{t("noChatDescription")}</p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowNewChatDialog(true)}
-                className="gap-2"
-              >
+              <Button variant="outline" size="sm" onClick={() => setShowNewChatDialog(true)} className="gap-2">
                 <Plus className="w-4 h-4" />
                 {t("newChat")}
               </Button>
@@ -255,6 +250,12 @@ export default function WhatsAppSidebar({
                 const finalUnreadCount = Math.max(apiUnreadCount, mapUnreadCount);
 
                 const isTyping = Boolean(typingByChat?.get(chat.id));
+
+                // ✅ Badge Text (9+)
+                const badgeText = finalUnreadCount > 9 ? "9+" : String(finalUnreadCount);
+
+                // Zeit: wenn lastMessage da ist, sonst leer
+                const timeText = chat.lastMessage ? formatLastMessageTime(chat.lastMessage.createdAt) : "";
 
                 return (
                   <div
@@ -281,22 +282,38 @@ export default function WhatsAppSidebar({
 
                       {/* Info */}
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-start justify-between mb-1">
                           <h3 className="font-semibold text-base text-foreground truncate">
                             {chat.otherUser.username}
                           </h3>
 
-                          {/* Zeit nur anzeigen wenn nicht typing */}
-                          {!isTyping && chat.lastMessage && (
-                            <span className="text-xs text-muted-foreground font-medium">
-                              {formatLastMessageTime(chat.lastMessage.createdAt)}
-                            </span>
-                          )}
+                          {/* ✅ Rechte Spalte: Zeit + Badge darunter */}
+                          <div className="flex flex-col items-end flex-shrink-0">
+                            {/* Zeit nur anzeigen wenn nicht typing */}
+                            {!isTyping && timeText ? (
+                              <span className="text-xs text-muted-foreground font-medium">
+                                {timeText}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground font-medium opacity-0">
+                                --
+                              </span>
+                            )}
+
+                            {/* ✅ Unread Badge unter "jetzt" */}
+                            {finalUnreadCount > 0 ? (
+                              <div className="mt-1 min-w-[18px] h-[18px] px-1 rounded-full bg-green-500 text-white text-[11px] font-semibold flex items-center justify-center shadow-sm">
+                                {badgeText}
+                              </div>
+                            ) : (
+                              <div className="mt-1 h-[18px] opacity-0">0</div>
+                            )}
+                          </div>
                         </div>
 
                         <div className="flex items-center justify-between">
                           {isTyping ? (
-                            // ✅ NUR PUNKTE, KEIN TEXT
+                            // ✅ nur Punkte
                             <div className="flex items-center text-sm truncate flex-1">
                               <div className="typing-indicator scale-75 origin-left">
                                 <div className="typing-dot" />
@@ -313,10 +330,6 @@ export default function WhatsAppSidebar({
                               <KeyRound className="w-3 h-3" />
                               {t("encryptedChat")}
                             </p>
-                          )}
-
-                          {finalUnreadCount > 0 && (
-                            <div className="bg-green-500 rounded-full w-2.5 h-2.5 ml-2 flex-shrink-0 shadow-sm" />
                           )}
                         </div>
                       </div>
