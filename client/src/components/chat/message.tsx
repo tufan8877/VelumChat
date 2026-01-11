@@ -1,5 +1,21 @@
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import type { User } from "@shared/schema";
+
+function toMs(v: any): number {
+  const t = new Date(v).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
+
+function formatRemaining(ms: number): string {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+
+  const pad = (n: number) => String(n).padStart(2, "0");
+  if (h > 0) return `${h}:${pad(m)}:${pad(s)}`;
+  return `${m}:${pad(s)}`;
+}
 
 export default function Message({
   message,
@@ -13,10 +29,7 @@ export default function Message({
   const type = message?.messageType || "text";
   const raw = String(message?.content || "");
 
-  // ✅ Normalisiere URL:
-  // - "/uploads/xyz" -> absolute url
-  // - "http(s)://..." bleibt
-  // - "blob:..." (optimistic preview) bleibt
+  // ✅ URL normalisieren (uploads/http/blob/data)
   const src =
     raw.startsWith("http") || raw.startsWith("blob:") || raw.startsWith("data:")
       ? raw
@@ -30,6 +43,25 @@ export default function Message({
 
   const avatarLetter = (otherUser?.username || "U").charAt(0).toUpperCase();
 
+  // ✅ Countdown bis message verschwindet
+  const expiresAtMs = useMemo(() => {
+    const ms = toMs(message?.expiresAt);
+    return ms > 0 ? ms : 0;
+  }, [message?.expiresAt]);
+
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!expiresAtMs) return;
+    if (expiresAtMs <= Date.now()) return;
+
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [expiresAtMs]);
+
+  const remainingMs = expiresAtMs ? expiresAtMs - now : 0;
+  const showCountdown = expiresAtMs > 0 && remainingMs > 0;
+
   return (
     <div className={`flex ${isOwn ? "justify-end" : "justify-start"} items-end gap-2`}>
       {/* ✅ Avatar nur bei empfangenen Nachrichten */}
@@ -39,9 +71,9 @@ export default function Message({
         </div>
       )}
 
-      <div className={`max-w-[78%] md:max-w-[60%] p-3 ${bubbleClass}`}>
-        {type === "image" ? (
-          <div className="space-y-2">
+      <div className="flex flex-col max-w-[78%] md:max-w-[60%]">
+        <div className={`p-3 ${bubbleClass}`}>
+          {type === "image" ? (
             <img
               src={src}
               alt="image"
@@ -49,26 +81,33 @@ export default function Message({
               style={{ maxHeight: 360, objectFit: "cover" }}
               loading="lazy"
             />
+          ) : type === "file" ? (
+            <div className="space-y-1">
+              <div className="font-medium truncate">{message?.fileName || "File"}</div>
+              <a
+                href={src}
+                target="_blank"
+                rel="noreferrer"
+                className={isOwn ? "underline text-white/90" : "underline text-primary"}
+              >
+                Open / Download
+              </a>
+              {message?.fileSize ? (
+                <div className={isOwn ? "text-white/80 text-xs" : "text-muted-foreground text-xs"}>
+                  {Math.round((Number(message.fileSize) / 1024) * 10) / 10} KB
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="whitespace-pre-wrap break-words">{raw}</div>
+          )}
+        </div>
+
+        {/* ✅ Countdown unter der Bubble */}
+        {showCountdown && (
+          <div className={`mt-1 text-xs ${isOwn ? "text-destructive text-right" : "text-destructive"}`}>
+            {formatRemaining(remainingMs)}
           </div>
-        ) : type === "file" ? (
-          <div className="space-y-1">
-            <div className="font-medium truncate">{message?.fileName || "File"}</div>
-            <a
-              href={src}
-              target="_blank"
-              rel="noreferrer"
-              className={isOwn ? "underline text-white/90" : "underline text-primary"}
-            >
-              Open / Download
-            </a>
-            {message?.fileSize ? (
-              <div className={isOwn ? "text-white/80 text-xs" : "text-muted-foreground text-xs"}>
-                {Math.round((Number(message.fileSize) / 1024) * 10) / 10} KB
-              </div>
-            ) : null}
-          </div>
-        ) : (
-          <div className="whitespace-pre-wrap break-words">{raw}</div>
         )}
       </div>
     </div>
