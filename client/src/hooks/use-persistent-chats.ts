@@ -79,7 +79,7 @@ export function usePersistentChats(userId?: number, socket?: any) {
   const [isLoading, setIsLoading] = useState(false);
   const [unreadCounts, setUnreadCounts] = useState<Map<number, number>>(new Map());
 
-  // ✅ Typing indicator (chatId -> isTyping)
+  // ✅ Typing state: chatId -> true (wenn der andere gerade tippt)
   const [typingByChat, setTypingByChat] = useState<Map<number, boolean>>(new Map());
   const typingTimeoutsRef = useRef<Map<number, any>>(new Map());
 
@@ -101,14 +101,14 @@ export function usePersistentChats(userId?: number, socket?: any) {
   const setTypingState = useCallback((chatId: number, isTyping: boolean) => {
     setTypingByChat((prev) => {
       const next = new Map(prev);
-      if (!isTyping) next.delete(chatId);
-      else next.set(chatId, true);
+      if (isTyping) next.set(chatId, true);
+      else next.delete(chatId);
       return next;
     });
   }, []);
 
   // --------------------------
-  // Timers
+  // Timers (Self-destruct)
   // --------------------------
   const clearTimer = (messageId: number) => {
     const t = deletionTimersRef.current.get(messageId);
@@ -203,6 +203,7 @@ export function usePersistentChats(userId?: number, socket?: any) {
       setUnreadCounts(newUnread);
       setPersistentContacts(sorted);
 
+      // Optional: messages pre-load
       for (const c of sorted) {
         await loadActiveMessages(c.id);
       }
@@ -249,6 +250,7 @@ export function usePersistentChats(userId?: number, socket?: any) {
       setSelectedChat(chat);
       if (!chat || !userId) return;
 
+      // mark-read
       try {
         await authedFetch(`/api/chats/${chat.id}/mark-read`, {
           method: "POST",
@@ -259,6 +261,7 @@ export function usePersistentChats(userId?: number, socket?: any) {
         console.log("mark-read failed:", e);
       }
 
+      // local badge reset
       setUnreadCounts((prev) => {
         const next = new Map(prev);
         next.delete(chat.id);
@@ -284,16 +287,20 @@ export function usePersistentChats(userId?: number, socket?: any) {
     async (chatId: number) => {
       if (!userId) return;
 
+      // local cutoff now
       setCutoffNow(chatId);
 
+      // clear local messages
       setActiveMessages((prev) => {
         const next = new Map(prev);
         next.set(chatId, []);
         return next;
       });
 
+      // close if open
       setSelectedChat((prev) => (prev?.id === chatId ? null : prev));
 
+      // server hide
       try {
         await authedFetch(`/api/chats/${chatId}/delete`, { method: "POST" });
       } catch (e) {
@@ -306,15 +313,16 @@ export function usePersistentChats(userId?: number, socket?: any) {
   );
 
   // --------------------------
-  // Send message (SECONDS)
+  // Send message
   // --------------------------
   const sendMessage = useCallback(
-    async (content: string, type: string = "text", destructTimerSec: number) => {
+    async (content: string, type: string = "text", destructTimerSec: number, _file?: File) => {
       if (!selectedChat || !userId) return;
       if (!socket?.send) return;
 
       const secs = Math.max(Number(destructTimerSec) || 0, 5);
 
+      // optimistic
       const optimistic: any = {
         id: Date.now(),
         chatId: selectedChat.id,
@@ -351,7 +359,7 @@ export function usePersistentChats(userId?: number, socket?: any) {
   );
 
   // --------------------------
-  // Send typing (WS)
+  // ✅ Send typing
   // --------------------------
   const sendTyping = useCallback(
     (isTyping: boolean) => {
@@ -370,26 +378,27 @@ export function usePersistentChats(userId?: number, socket?: any) {
   );
 
   // --------------------------
-  // Incoming messages (WS)
+  // Incoming WS (messages + typing)
   // --------------------------
   useEffect(() => {
     if (!socket?.on || !userId) return;
 
     const onTyping = (data: any) => {
       if (data?.type !== "typing") return;
+
       const chatId = Number(data.chatId) || 0;
       const senderId = Number(data.senderId) || 0;
       const receiverId = Number(data.receiverId) || 0;
+      const isTyping = Boolean(data.isTyping);
 
       if (!chatId || receiverId !== userId) return;
       if (senderId === userId) return;
 
-      const isTyping = Boolean(data.isTyping);
-
-      setTypingState(chatId, isTyping);
       clearTypingTimer(chatId);
+      setTypingState(chatId, isTyping);
 
       if (isTyping) {
+        // failsafe: falls "typing:false" nicht ankommt
         const t = setTimeout(() => {
           setTypingState(chatId, false);
           clearTypingTimer(chatId);
@@ -399,16 +408,18 @@ export function usePersistentChats(userId?: number, socket?: any) {
     };
 
     const onMsg = (data: any) => {
+      // (manche Clients routen alles über "message")
       if (data?.type === "typing") {
         onTyping(data);
         return;
       }
-      if (data?.type !== "new_message" || !data.message) return;
 
+      if (data?.type !== "new_message" || !data.message) return;
       const m: any = data.message;
 
       if (m.receiverId !== userId) return;
 
+      // cutoff filter
       const cutoff = getCutoffMs(m.chatId);
       if (cutoff) {
         const created = toMs(m.createdAt);
@@ -438,13 +449,23 @@ export function usePersistentChats(userId?: number, socket?: any) {
       setTimeout(() => loadPersistentContacts(), 100);
     };
 
-    socket.on("message", onMsg);
     socket.on("typing", onTyping);
+    socket.on("message", onMsg);
+
     return () => {
-      socket.off?.("message", onMsg);
       socket.off?.("typing", onTyping);
+      socket.off?.("message", onMsg);
     };
-  }, [socket, userId, scheduleMessageDeletion, selectedChat, loadPersistentContacts, getCutoffMs, clearTypingTimer, setTypingState]);
+  }, [
+    socket,
+    userId,
+    selectedChat,
+    scheduleMessageDeletion,
+    loadPersistentContacts,
+    getCutoffMs,
+    clearTypingTimer,
+    setTypingState,
+  ]);
 
   // --------------------------
   // Initial load
@@ -472,11 +493,12 @@ export function usePersistentChats(userId?: number, socket?: any) {
     persistentContacts,
     messages,
     selectedChat,
-    isOtherTyping,
     isLoading,
     selectChat,
     sendMessage,
     sendTyping,
+    isOtherTyping,
+    typingByChat, // ✅ für Sidebar
     messagesEndRef,
     loadPersistentContacts,
     unreadCounts,
