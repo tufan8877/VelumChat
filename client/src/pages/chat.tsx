@@ -6,7 +6,6 @@ import SettingsModal from "@/components/chat/settings-modal";
 import { Toaster } from "@/components/ui/toaster";
 import { useWebSocketReliable } from "@/hooks/use-websocket-reliable";
 import { usePersistentChats } from "@/hooks/use-persistent-chats";
-import { queryClient } from "@/lib/queryClient";
 import type { User } from "@shared/schema";
 
 export default function ChatPage() {
@@ -20,22 +19,18 @@ export default function ChatPage() {
       let userData = localStorage.getItem("user");
 
       if (!userData) {
-        console.log("🔍 WICKR-ME-RECOVERY: Searching for profile in backup locations...");
         const { profileProtection } = await import("@/lib/profile-protection");
         const recovered = profileProtection.retrieveProfile();
         if (recovered) {
           setCurrentUser(recovered);
-          console.log("✅ Profile recovered from backup storage:", recovered.username);
           return;
         }
-        console.log("⚠️ No user profile found, redirecting to login");
         setLocation("/");
         return;
       }
 
       try {
         const user = JSON.parse(userData);
-        console.log("👤 Loaded user from localStorage:", user.username, "ID:", user.id);
         setCurrentUser(user);
       } catch (error) {
         console.error("Failed to parse user data:", error);
@@ -52,22 +47,16 @@ export default function ChatPage() {
     persistentContacts: chats,
     messages,
     sendMessage,
+    sendTyping,
     selectChat,
     isLoading,
     selectedChat,
     loadPersistentContacts,
     unreadCounts,
-    deleteChat, // ✅ NEW
+    deleteChat,
+    isOtherTyping,
   } = usePersistentChats(currentUser?.id, socket);
 
-  useEffect(() => {
-    console.log("Chat status:", {
-      user: currentUser?.username,
-      connected: socket?.isConnected,
-    });
-  }, [currentUser, socket]);
-
-  // ✅ destructTimer in SEKUNDEN
   const handleSendMessage = (content: string, type: string, destructTimer: number, file?: File) => {
     if (!currentUser?.id) {
       setLocation("/");
@@ -76,7 +65,8 @@ export default function ChatPage() {
     if (!selectedChat?.otherUser?.id) return;
 
     const destructTimerSec = Math.max(Number(destructTimer) || 0, 5);
-    sendMessage(content, type, destructTimerSec, file);
+    // sendMessage in hook: (content, type, destructTimerSec)
+    sendMessage(content, type, destructTimerSec);
   };
 
   if (!currentUser) {
@@ -104,7 +94,7 @@ export default function ChatPage() {
           unreadCounts={unreadCounts}
           onRefreshChats={() => loadPersistentContacts()}
           onDeleteChat={async (chatId) => {
-            await deleteChat(chatId); // ✅ Cutoff delete
+            await deleteChat(chatId);
           }}
         />
       </div>
@@ -115,6 +105,12 @@ export default function ChatPage() {
           selectedChat={selectedChat}
           messages={messages}
           onSendMessage={handleSendMessage}
+          onTyping={(state) => {
+            try {
+              sendTyping(state);
+            } catch {}
+          }}
+          isOtherTyping={isOtherTyping}
           isConnected={socket?.isConnected || false}
           onBackToList={() => selectChat(null as any)}
         />
