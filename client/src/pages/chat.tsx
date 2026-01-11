@@ -48,15 +48,17 @@ export default function ChatPage() {
     messages,
     sendMessage,
     sendTyping,
+    isOtherTyping,
+    typingByChat,
     selectChat,
     isLoading,
     selectedChat,
     loadPersistentContacts,
     unreadCounts,
     deleteChat,
-    isOtherTyping,
   } = usePersistentChats(currentUser?.id, socket);
 
+  // destructTimer in SEKUNDEN
   const handleSendMessage = (content: string, type: string, destructTimer: number, file?: File) => {
     if (!currentUser?.id) {
       setLocation("/");
@@ -65,8 +67,7 @@ export default function ChatPage() {
     if (!selectedChat?.otherUser?.id) return;
 
     const destructTimerSec = Math.max(Number(destructTimer) || 0, 5);
-    // sendMessage in hook: (content, type, destructTimerSec)
-    sendMessage(content, type, destructTimerSec);
+    sendMessage(content, type, destructTimerSec, file);
   };
 
   if (!currentUser) {
@@ -82,7 +83,11 @@ export default function ChatPage() {
 
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden flex flex-col md:flex-row bg-background chat-container">
-      <div className={`${selectedChat ? "hidden md:flex" : "flex"} md:flex w-full md:w-[380px] min-w-0 max-w-full overflow-x-hidden`}>
+      <div
+        className={`${
+          selectedChat ? "hidden md:flex" : "flex"
+        } md:flex w-full md:w-[380px] min-w-0 max-w-full overflow-x-hidden`}
+      >
         <WhatsAppSidebar
           currentUser={currentUser}
           chats={chats as any}
@@ -92,6 +97,7 @@ export default function ChatPage() {
           isConnected={socket?.isConnected || false}
           isLoading={isLoading}
           unreadCounts={unreadCounts}
+          typingByChat={typingByChat}   // ✅ NEU
           onRefreshChats={() => loadPersistentContacts()}
           onDeleteChat={async (chatId) => {
             await deleteChat(chatId);
@@ -99,13 +105,17 @@ export default function ChatPage() {
         />
       </div>
 
-      <div className={`${selectedChat ? "flex" : "hidden md:flex"} flex-1 min-w-0 w-full max-w-full overflow-x-hidden chat-safe`}>
+      <div
+        className={`${
+          selectedChat ? "flex" : "hidden md:flex"
+        } flex-1 min-w-0 w-full max-w-full overflow-x-hidden chat-safe`}
+      >
         <ChatView
           currentUser={currentUser}
           selectedChat={selectedChat}
           messages={messages}
           onSendMessage={handleSendMessage}
-          onTyping={(state) => {
+          onTyping={(state: boolean) => {
             try {
               sendTyping(state);
             } catch {}
