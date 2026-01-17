@@ -1,31 +1,63 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { useQuery } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useLanguage } from "@/lib/i18n";
-import { Settings, Plus, Search, KeyRound, Shield, Clock, LogOut } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  Search,
+  Plus,
+  Settings,
+  LogOut,
+  MessageCircle,
+  KeyRound,
+  MoreVertical,
+  Trash2,
+  UserX,
+} from "lucide-react";
 import type { User, Chat } from "@shared/schema";
-import logoPath from "@assets/whispergram Logo_1752171096580.jpg";
-import ChatContextMenu from "./chat-context-menu";
+import NewChatModal from "@/components/chat/new-chat-modal";
 
-interface SidebarProps {
+interface WhatsAppSidebarProps {
   currentUser: User;
-  chats: Array<Chat & { otherUser: User; lastMessage?: any }>;
-  selectedChat: Chat & { otherUser: User } | null;
+  chats: Array<Chat & { otherUser: User; lastMessage?: any; unreadCount?: number }>;
+  selectedChat: (Chat & { otherUser: User }) | null;
   onSelectChat: (chat: Chat & { otherUser: User }) => void;
   onOpenSettings: () => void;
   isConnected: boolean;
   isLoading: boolean;
-  isPersistentMode?: boolean; // New prop for persistent chat mode
-  unreadCounts?: Map<number, number>; // WhatsApp-style unread message counts
-  onRefreshChats?: () => void; // Callback to refresh chat list
+  unreadCounts?: Map<number, number>;
+  onRefreshChats?: () => void;
+  typingByChat?: Map<number, boolean>;
+  onDeleteChat: (chatId: number) => Promise<void> | void;
+  onBlockUser?: (userId: number) => Promise<void> | void;
 }
 
-export default function Sidebar({
+function getAuthToken(): string | null {
+  try {
+    const raw = localStorage.getItem("user");
+    if (!raw) return null;
+    const u = JSON.parse(raw);
+    return u?.token || u?.accessToken || localStorage.getItem("token") || null;
+  } catch {
+    return localStorage.getItem("token");
+  }
+}
+
+function authHeaders(extra?: Record<string, string>) {
+  const token = getAuthToken();
+  return {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(extra || {}),
+  };
+}
+
+export default function WhatsAppSidebar({
   currentUser,
   chats,
   selectedChat,
@@ -34,64 +66,61 @@ export default function Sidebar({
   isConnected,
   isLoading,
   unreadCounts = new Map(),
+  typingByChat = new Map(),
   onRefreshChats,
-}: SidebarProps) {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [showNewChatDialog, setShowNewChatDialog] = useState(false);
-  const [, setLocation] = useLocation();
+  onDeleteChat,
+  onBlockUser,
+}: WhatsAppSidebarProps) {
   const { t } = useLanguage();
 
-  const { data: searchResults } = useQuery({
-    queryKey: ["search-users", searchQuery, currentUser.id],
-    enabled: searchQuery.length > 2,
-    queryFn: async () => {
-      const response = await apiRequest("GET", `/api/search-users?q=${encodeURIComponent(searchQuery)}&excludeId=${currentUser.id}`);
-      return response.json();
-    },
-  });
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showNewChatDialog, setShowNewChatDialog] = useState(false);
 
-  const handleStartChat = async (user: User) => {
+  const handleLogout = () => {
+    window.location.href = "/";
+  };
+
+  const handleMarkRead = async (chatId: number) => {
     try {
-      console.log("🚀 Starting SEPARATE 1:1 chat with user:", user.username, "ID:", user.id);
-      console.log("🔍 Current user ID:", currentUser.id);
-      
-      // First check if chat already exists between these specific users
-      const existingChat = chats.find(chat => 
-        chat.otherUser.id === user.id
-      );
-      
-      if (existingChat) {
-        console.log('💬 Found existing 1:1 chat:', existingChat.id, 'between', currentUser.id, 'and', user.id);
-        onSelectChat(existingChat);
-        setShowNewChatDialog(false);
-        setSearchQuery("");
+      const res = await fetch(`/api/chats/${chatId}/mark-read`, {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        credentials: "include",
+        body: JSON.stringify({}),
+      });
+
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        console.error("❌ mark-read failed:", res.status, txt);
         return;
       }
-      
-      // Create new SEPARATED chat for these specific users  
-      console.log('💬 Creating NEW 1:1 chat between users:', currentUser.id, 'and', user.id);
-      const response = await apiRequest("POST", "/api/chats", {
-        participant1Id: currentUser.id,
-        participant2Id: user.id,
-      });
-      const chat = await response.json();
-      console.log("✅ NEW 1:1 chat created with ID:", chat.id, 'for users', currentUser.id, 'and', user.id);
-      
-      const chatWithUser = { ...chat, otherUser: user };
-      onSelectChat(chatWithUser);
-      setShowNewChatDialog(false);
-      setSearchQuery("");
-      
-      console.log("✅ 1:1 Chat selected:", chatWithUser.id);
-    } catch (error) {
-      console.error("❌ Failed to start 1:1 chat:", error);
+
+      onRefreshChats?.();
+    } catch (err) {
+      console.error("❌ mark-read error:", err);
     }
   };
 
-  const handleLogout = () => {
-    // WICKR-ME-STYLE: Never delete user data, preserve profile permanently
-    console.log("🚫 WICKR-ME-LOGOUT: Preserving user profile, only ending session");
-    setLocation("/");
+  const handleBlockUser = async (userId: number) => {
+    try {
+      const res = await fetch(`/api/users/${userId}/block`, {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        credentials: "include",
+        body: JSON.stringify({}),
+      });
+
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        console.error("❌ block user failed:", res.status, txt);
+        return;
+      }
+
+      onBlockUser?.(userId);
+      onRefreshChats?.();
+    } catch (err) {
+      console.error("❌ Error blocking user:", err);
+    }
   };
 
   const formatLastMessageTime = (date: string | Date) => {
@@ -102,249 +131,255 @@ export default function Sidebar({
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
 
-    if (diffMins < 1) return "now";
+    if (diffMins < 1) return t("now"); // "jetzt"
     if (diffMins < 60) return `${diffMins}m`;
     if (diffHours < 24) return `${diffHours}h`;
     if (diffDays < 7) return `${diffDays}d`;
     return messageDate.toLocaleDateString();
   };
 
+  const filteredChats = chats.filter((chat) => {
+    if (!searchQuery.trim()) return true;
+    return chat.otherUser.username.toLowerCase().includes(searchQuery.trim().toLowerCase());
+  });
+
   return (
     <>
-      <div className="w-full md:w-80 bg-surface border-r md:border-r border-b md:border-b-0 border-border flex flex-col h-48 md:h-screen flex-shrink-0">
+      <div className="w-full md:w-80 bg-background border-r border-border flex flex-col h-full md:h-screen">
         {/* Header */}
-        <div className="p-4 border-b border-border">
+        <div className="p-4 bg-primary/5 dark:bg-primary/10 border-b border-border">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center overflow-hidden">
-                <img 
-                  src="/attached_assets/whispergram Logo_1752171096580.jpg" 
-                  alt="Whispergram Logo" 
-                  className="w-full h-full object-cover"
-                />
+              <div className="w-12 h-12 bg-gradient-to-br from-primary/30 to-primary/50 rounded-full flex items-center justify-center shadow-md">
+                <span className="text-white font-bold text-lg">
+                  {currentUser.username.charAt(0).toUpperCase()}
+                </span>
               </div>
+
               <div>
-                <h2 className="font-semibold text-text-primary">{currentUser.username}</h2>
-                <div className="flex items-center space-x-1">
-                  <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-accent' : 'bg-destructive'}`} />
-                  <span className="text-xs text-accent">{isConnected ? t('online') : 'Connecting...'}</span>
+                <h2 className="font-semibold text-foreground text-lg">{currentUser.username}</h2>
+                <div className="flex items-center space-x-2">
+                  <div
+                    className={cn(
+                      "w-2 h-2 rounded-full transition-colors",
+                      isConnected ? "bg-green-500" : "bg-red-500"
+                    )}
+                  />
+                  <span className="text-xs text-muted-foreground font-medium">
+                    {isConnected ? t("online") : t("connecting")}
+                  </span>
                 </div>
               </div>
             </div>
-            <div className="flex space-x-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onOpenSettings}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <Settings className="w-4 h-4" />
-              </Button>
+
+            <div className="flex space-x-1">
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => setShowNewChatDialog(true)}
-                className="text-muted-foreground hover:text-foreground"
+                className="text-muted-foreground hover:text-foreground hover:bg-primary/10"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-5 h-5" />
               </Button>
+
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onOpenSettings}
+                className="text-muted-foreground hover:text-foreground hover:bg-primary/10"
+              >
+                <Settings className="w-5 h-5" />
+              </Button>
+
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={handleLogout}
-                className="text-muted-foreground hover:text-destructive"
-                title="Logout"
+                className="text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
               >
-                <LogOut className="w-4 h-4" />
+                <LogOut className="w-5 h-5" />
               </Button>
             </div>
           </div>
         </div>
 
         {/* Search */}
-        <div className="p-4 border-b border-border">
+        <div className="p-3 bg-background">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-text-muted z-10 pointer-events-none" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground z-10 pointer-events-none" />
             <Input
-              placeholder={t('searchUsers')}
+              placeholder={t("searchChats")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-12 pr-4 py-3 bg-gray-800 border-border text-white placeholder:text-gray-400 h-12 text-sm"
-              style={{ textIndent: '8px' }}
+              className="pl-12 pr-4 py-3 bg-muted/30 border-border focus:bg-background text-foreground placeholder:text-muted-foreground h-12 text-sm indent-2"
+              style={{ textIndent: "8px" }}
             />
           </div>
         </div>
 
-        {/* Active Chats */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar">
+        {/* Chat List */}
+        <div className="flex-1 overflow-y-auto">
           {isLoading ? (
-            <div className="p-4 text-center">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary mx-auto mb-2"></div>
-              <p className="text-text-muted text-sm">Loading...</p>
+            <div className="p-6 text-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-3"></div>
+              <p className="text-muted-foreground">{t("loadingChats")}</p>
             </div>
-          ) : !chats || chats.length === 0 ? (
-            <div className="p-4 text-center">
-              <p className="text-text-muted text-sm">No chats yet</p>
-              <p className="text-text-muted text-xs mt-1">{t('startChat')}</p>
+          ) : filteredChats.length === 0 ? (
+            <div className="p-8 text-center">
+              <div className="w-20 h-20 bg-muted/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                <MessageCircle className="w-10 h-10 text-muted-foreground" />
+              </div>
+              <h3 className="font-semibold text-foreground mb-2">{t("noChats")}</h3>
+              <p className="text-sm text-muted-foreground mb-4">{t("noChatDescription")}</p>
+              <Button variant="outline" size="sm" onClick={() => setShowNewChatDialog(true)} className="gap-2">
+                <Plus className="w-4 h-4" />
+                {t("newChat")}
+              </Button>
             </div>
           ) : (
-            (chats || []).map((chat) => (
-              <div
-                key={chat.id}
-                className={`chat-item ${selectedChat?.id === chat.id ? 'bg-muted/50' : ''}`}
-                onClick={() => onSelectChat(chat)}
-              >
-                <div className="flex items-center space-x-3">
-                  <div className="relative">
-                    <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center">
-                      <KeyRound className="w-5 h-5 text-muted-foreground" />
-                    </div>
-                    {chat.otherUser.isOnline && (
-                      <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-accent rounded-full border-2 border-surface" />
+            <div>
+              {filteredChats.map((chat) => {
+                const apiUnreadCount = chat.unreadCount || 0;
+                const mapUnreadCount = unreadCounts?.get(chat.id) || 0;
+                const finalUnreadCount = Math.max(apiUnreadCount, mapUnreadCount);
+
+                const badgeText = finalUnreadCount > 9 ? "9+" : String(finalUnreadCount);
+
+                const isTyping = Boolean(typingByChat?.get(chat.id));
+                const timeText = chat.lastMessage ? formatLastMessageTime(chat.lastMessage.createdAt) : "";
+
+                const isOnline = Boolean((chat as any)?.otherUser?.isOnline);
+
+                return (
+                  <div
+                    key={chat.id}
+                    className={cn(
+                      "relative px-4 py-4 cursor-pointer transition-all duration-200 border-l-4 border-transparent hover:bg-muted/30 group",
+                      selectedChat?.id === chat.id && "bg-primary/5 border-l-primary"
                     )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-medium text-text-primary truncate">
-                        {chat.otherUser.username}
-                      </h3>
-                      <div className="flex items-center space-x-2">
-                        {chat.lastMessage && (
-                          <span className="text-xs text-text-muted">
-                            {formatLastMessageTime(chat.lastMessage.createdAt)}
+                    onClick={async () => {
+                      await handleMarkRead(chat.id);
+                      onSelectChat(chat);
+                    }}
+                  >
+                    <div className="flex items-center space-x-3">
+                      {/* Avatar */}
+                      <div className="relative flex-shrink-0">
+                        <div className="w-14 h-14 bg-gradient-to-br from-primary/20 via-primary/30 to-primary/40 rounded-full flex items-center justify-center shadow-sm">
+                          <span className="text-primary font-bold text-xl">
+                            {chat.otherUser.username.charAt(0).toUpperCase()}
                           </span>
-                        )}
-                        <ChatContextMenu
-                          currentUser={currentUser}
-                          chat={chat}
-                          onChatDeleted={() => {
-                            // Refresh the chat list after deletion
-                            if (onRefreshChats) {
-                              onRefreshChats();
-                            }
-                            // If this was the selected chat, clear selection
-                            if (selectedChat?.id === chat.id) {
-                              // Reset selection by passing null
-                              const nullChat = null as any;
-                              onSelectChat(nullChat);
-                            }
-                          }}
-                          onUserBlocked={() => {
-                            // Refresh the chat list after blocking
-                            if (onRefreshChats) {
-                              onRefreshChats();
-                            }
-                            // If this was the selected chat, clear selection
-                            if (selectedChat?.id === chat.id) {
-                              const nullChat = null as any;
-                              onSelectChat(nullChat);
-                            }
-                          }}
+                        </div>
+
+                        {/* ✅ Online/Offline Punkt (grün / grau) */}
+                        <div
+                          className={cn(
+                            "absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-background shadow-sm",
+                            isOnline ? "bg-green-500" : "bg-muted-foreground/60"
+                          )}
                         />
                       </div>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm text-text-muted truncate">
-                        {chat.lastMessage ? (
-                          chat.lastMessage.messageType === "text" ? (
-                            chat.lastMessage.content
-                          ) : chat.lastMessage.messageType === "image" ? (
-                            <span className="flex items-center">
-                              <span>📷 Photo</span>
-                            </span>
+
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between mb-1">
+                          <h3 className="font-semibold text-base text-foreground truncate">
+                            {chat.otherUser.username}
+                          </h3>
+
+                          {/* Zeit + Badge */}
+                          <div className="flex flex-col items-end flex-shrink-0">
+                            {!isTyping && timeText ? (
+                              <span className="text-xs text-muted-foreground font-medium">{timeText}</span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground font-medium opacity-0">--</span>
+                            )}
+
+                            {finalUnreadCount > 0 ? (
+                              <div className="mt-1 min-w-[18px] h-[18px] px-1 rounded-full bg-green-500 text-white text-[11px] font-semibold flex items-center justify-center shadow-sm">
+                                {badgeText}
+                              </div>
+                            ) : (
+                              <div className="mt-1 h-[18px] opacity-0">0</div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          {isTyping ? (
+                            <div className="flex items-center text-sm truncate flex-1">
+                              <div className="typing-indicator scale-75 origin-left">
+                                <div className="typing-dot" />
+                                <div className="typing-dot" style={{ animationDelay: "0.1s" }} />
+                                <div className="typing-dot" style={{ animationDelay: "0.2s" }} />
+                              </div>
+                            </div>
+                          ) : chat.lastMessage ? (
+                            <p className="text-sm text-muted-foreground truncate flex-1">
+                              {chat.lastMessage.content}
+                            </p>
                           ) : (
-                            <span className="flex items-center">
-                              <span>📎 File</span>
-                            </span>
-                          )
-                        ) : (
-                          "Start a conversation..."
-                        )}
-                      </p>
-                      <div className="flex items-center space-x-2">
-                        {/* WhatsApp-style unread message count */}
-                        {unreadCounts.has(chat.id) && unreadCounts.get(chat.id)! > 0 && (
-                          <Badge 
-                            variant="default" 
-                            className="bg-green-500 hover:bg-green-600 text-white text-xs px-2 py-1 rounded-full min-w-[20px] h-5 flex items-center justify-center font-medium"
-                          >
-                            {unreadCounts.get(chat.id)}
-                          </Badge>
-                        )}
-                        {chat.lastMessage && (
-                          <Clock className="w-3 h-3 text-text-muted" />
-                        )}
+                            <p className="text-sm text-muted-foreground/70 italic flex items-center gap-1">
+                              <KeyRound className="w-3 h-3" />
+                              {t("encryptedChat")}
+                            </p>
+                          )}
+                        </div>
                       </div>
+
+                      {/* Menu */}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="opacity-70 hover:opacity-100 transition-opacity h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <MoreVertical className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+
+                        <DropdownMenuContent align="end" className="w-48">
+                          <DropdownMenuItem
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              await onDeleteChat(chat.id);
+                            }}
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            {t("deleteChat")}
+                          </DropdownMenuItem>
+
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleBlockUser(chat.otherUser.id);
+                            }}
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                          >
+                            <UserX className="w-4 h-4 mr-2" />
+                            {t("blockUser", { username: chat.otherUser.username })}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
-                </div>
-              </div>
-            ))
+                );
+              })}
+            </div>
           )}
-        </div>
-
-        {/* Connection Status */}
-        <div className="p-4 border-t border-border">
-          <div className="flex items-center space-x-2 text-sm">
-            <Shield className="w-4 h-4 text-accent" />
-            <span className="text-text-muted">Encrypted • </span>
-            <span className={isConnected ? "text-accent" : "text-destructive"}>
-              {isConnected ? "Connected" : "Disconnected"}
-            </span>
-          </div>
         </div>
       </div>
 
-      {/* New Chat Dialog */}
-      <Dialog open={showNewChatDialog} onOpenChange={setShowNewChatDialog}>
-        <DialogContent className="bg-surface border-border">
-          <DialogHeader>
-            <DialogTitle className="text-foreground">Start New Chat</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <Input
-              placeholder="Search users by username..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-gray-800 border-border text-white placeholder:text-gray-400"
-            />
-            {searchResults && searchResults.length > 0 && (
-              <div className="space-y-2 max-h-60 overflow-y-auto">
-                {searchResults.map((user: User) => (
-                  <div
-                    key={user.id}
-                    className="flex items-center justify-between p-3 rounded-lg bg-bg-dark hover:bg-muted/50 cursor-pointer"
-                    onClick={() => handleStartChat(user)}
-                  >
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-muted rounded-full flex items-center justify-center">
-                        <KeyRound className="w-4 h-4 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-white">{user.username}</p>
-                        <div className="flex items-center space-x-1">
-                          <div className={`w-2 h-2 rounded-full ${user.isOnline ? 'bg-accent' : 'bg-muted-foreground'}`} />
-                          <span className="text-xs text-muted-foreground">
-                            {user.isOnline ? 'Online' : 'Offline'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    <Button variant="outline" size="sm">
-                      Chat
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-            {searchQuery.length > 2 && (!searchResults || searchResults.length === 0) && (
-              <p className="text-muted-foreground text-sm text-center py-4">
-                No users found with that username
-              </p>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <NewChatModal
+        open={showNewChatDialog}
+        onOpenChange={setShowNewChatDialog}
+        currentUser={currentUser}
+        onRefreshChats={onRefreshChats}
+        onChatCreated={(chatWithUser) => onSelectChat(chatWithUser)}
+      />
     </>
   );
 }
