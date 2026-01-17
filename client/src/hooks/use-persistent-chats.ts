@@ -39,7 +39,7 @@ function toMs(dateLike: any): number {
   return Number.isFinite(t) ? t : 0;
 }
 
-// ✅ Abortable fetch helper (verhindert “endlos laden”)
+// ✅ Abortable fetch helper
 async function authedFetch(url: string, init?: RequestInit, timeoutMs = 15000) {
   const token = getAuthToken();
   if (!token) throw new Error("Missing token");
@@ -123,10 +123,8 @@ export function usePersistentChats(userId?: number, socket?: any) {
   const [selectedChat, setSelectedChat] = useState<(Chat & { otherUser: User }) | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  // ✅ Unread badge state (chatId -> count)
   const [unreadCounts, setUnreadCounts] = useState<Map<number, number>>(new Map());
 
-  // ✅ Typing
   const [typingByChat, setTypingByChat] = useState<Map<number, boolean>>(new Map());
   const typingTimeoutsRef = useRef<Map<number, any>>(new Map());
 
@@ -134,6 +132,9 @@ export function usePersistentChats(userId?: number, socket?: any) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const cutoffsRef = useRef<Record<string, string>>({});
+
+  // ✅ Presence: Default OFFLINE. Nur echte WS Events setzen online.
+  const presenceRef = useRef<Map<number, boolean>>(new Map());
 
   // --------------------------
   // Typing helpers
@@ -246,7 +247,7 @@ export function usePersistentChats(userId?: number, socket?: any) {
   );
 
   // --------------------------
-  // Load contacts (OHNE Messages Prefetch) + Unread MERGE
+  // ✅ Load contacts (default offline)
   // --------------------------
   const loadPersistentContacts = useCallback(async () => {
     if (!userId) return;
@@ -255,6 +256,7 @@ export function usePersistentChats(userId?: number, socket?: any) {
     try {
       const contacts = await authedFetch(`/api/chats/${userId}`, undefined, 15000);
 
+      // Unread server
       const serverUnread = new Map<number, number>();
       (contacts || []).forEach((c: any) => {
         let unread = 0;
@@ -265,7 +267,7 @@ export function usePersistentChats(userId?: number, socket?: any) {
         if (unread > 0) serverUnread.set(c.id, unread);
       });
 
-      // ✅ MERGE: lokal nicht mit 0 überschreiben
+      // merge unread
       setUnreadCounts((prev) => {
         const next = new Map(prev);
         for (const [chatId, cnt] of serverUnread.entries()) {
@@ -281,7 +283,17 @@ export function usePersistentChats(userId?: number, socket?: any) {
         return new Date(bTime).getTime() - new Date(aTime).getTime();
       });
 
-      setPersistentContacts(sorted);
+      // ✅ Presence überschreibt DB: default OFFLINE, nur WS setzt true
+      const withPresence = (sorted || []).map((c: any) => {
+        const oid = Number(c?.otherUser?.id) || 0;
+        const online = oid ? Boolean(presenceRef.current.get(oid)) : false;
+        return {
+          ...c,
+          otherUser: { ...c.otherUser, isOnline: online },
+        };
+      });
+
+      setPersistentContacts(withPresence);
     } catch (e) {
       console.error("❌ loadPersistentContacts:", e);
       setPersistentContacts([]);
@@ -310,7 +322,6 @@ export function usePersistentChats(userId?: number, socket?: any) {
         );
       } catch {}
 
-      // clear badge
       setUnreadCounts((prev) => {
         const next = new Map(prev);
         next.delete(chat.id);
@@ -462,7 +473,6 @@ export function usePersistentChats(userId?: number, socket?: any) {
         messageType: type,
         destructTimer: secs,
       };
-
       if (file) {
         wsPayload.fileName = fileName || file.name;
         wsPayload.fileSize = fileSize || file.size;
@@ -474,36 +484,22 @@ export function usePersistentChats(userId?: number, socket?: any) {
   );
 
   // --------------------------
-  // ✅ Presence update helper (user_status)
+  // ✅ Apply presence to UI
   // --------------------------
-  const applyPresenceToState = useCallback((uid: number, isOnline: boolean) => {
-    const lastSeenIso = new Date().toISOString();
+  const applyPresence = useCallback((uid: number, isOnline: boolean) => {
+    presenceRef.current.set(uid, isOnline);
 
     setPersistentContacts((prev) =>
       prev.map((c: any) => {
-        if (c?.otherUser?.id !== uid) return c;
-        return {
-          ...c,
-          otherUser: {
-            ...c.otherUser,
-            isOnline,
-            lastSeen: isOnline ? c.otherUser?.lastSeen : lastSeenIso,
-          },
-        };
+        if (Number(c?.otherUser?.id) !== uid) return c;
+        return { ...c, otherUser: { ...c.otherUser, isOnline } };
       })
     );
 
     setSelectedChat((prev) => {
-      if (!prev?.otherUser?.id) return prev;
-      if (prev.otherUser.id !== uid) return prev;
-      return {
-        ...prev,
-        otherUser: {
-          ...prev.otherUser,
-          isOnline,
-          lastSeen: isOnline ? prev.otherUser?.lastSeen : lastSeenIso,
-        },
-      };
+      if (!prev) return prev;
+      if (Number(prev?.otherUser?.id) !== uid) return prev;
+      return { ...prev, otherUser: { ...prev.otherUser, isOnline } };
     });
   }, []);
 
@@ -540,11 +536,10 @@ export function usePersistentChats(userId?: number, socket?: any) {
       if (data?.type !== "user_status") return;
       const uid = Number(data.userId) || 0;
       if (!uid) return;
-      applyPresenceToState(uid, Boolean(data.isOnline));
+      applyPresence(uid, Boolean(data.isOnline));
     };
 
     const onMsg = (data: any) => {
-      // handle specific types that sometimes arrive on "message"
       if (data?.type === "typing") return onTyping(data);
       if (data?.type === "user_status") return onUserStatus(data);
 
@@ -568,7 +563,6 @@ export function usePersistentChats(userId?: number, socket?: any) {
 
       scheduleMessageDeletion(m);
 
-      // ✅ Badge erhöhen wenn Chat nicht offen
       if (!selectedChat || selectedChat.id !== m.chatId) {
         setUnreadCounts((prev) => {
           const next = new Map(prev);
@@ -599,7 +593,7 @@ export function usePersistentChats(userId?: number, socket?: any) {
     getCutoffMs,
     clearTypingTimer,
     setTypingState,
-    applyPresenceToState,
+    applyPresence,
   ]);
 
   // --------------------------
