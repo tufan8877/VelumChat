@@ -131,7 +131,6 @@ export default function ChatView({
     }
   };
 
-  // ✅ Dateien NICHT als Base64 über WS -> File weitergeben, Hook lädt hoch
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -148,12 +147,8 @@ export default function ChatView({
     }
 
     const secs = getTimerSeconds();
-
-    if (file.type.startsWith("image/")) {
-      onSendMessage("", "image", secs, file);
-    } else {
-      onSendMessage(file.name, "file", secs, file);
-    }
+    if (file.type.startsWith("image/")) onSendMessage("", "image", secs, file);
+    else onSendMessage(file.name, "file", secs, file);
 
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
@@ -200,10 +195,14 @@ export default function ChatView({
   }
 
   const headerLetter = (selectedChat.otherUser.username || "U").charAt(0).toUpperCase();
+  const otherOnline = Boolean((selectedChat as any)?.otherUser?.isOnline);
+
+  // Status: Wenn WS nicht connected -> "connecting", sonst online/offline
+  const statusDotClass = !isConnected ? "bg-red-500" : otherOnline ? "bg-green-500" : "bg-muted-foreground/60";
+  const statusText = !isConnected ? t("connecting") : otherOnline ? t("online") : t("offline");
 
   return (
     <div className="flex-1 flex flex-col h-[100dvh] bg-background chat-shell no-x-scroll">
-      {/* Header */}
       <div className="bg-background border-b border-border p-3 md:p-4 flex-shrink-0 chat-header">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
@@ -217,18 +216,17 @@ export default function ChatView({
               <ArrowLeft className="w-4 h-4" />
             </Button>
 
-            {/* ✅ Avatar wieder als Buchstabe */}
             <div className="w-10 h-10 bg-muted rounded-full flex items-center justify-center flex-shrink-0 avatar-mobile">
               <span className="text-muted-foreground font-semibold">{headerLetter}</span>
             </div>
 
             <div className="min-w-0">
               <h3 className="font-semibold text-foreground truncate">{selectedChat.otherUser.username}</h3>
+
               <div className="flex items-center gap-2 text-sm min-w-0">
-                <div className={`w-2 h-2 rounded-full ${isConnected ? "bg-green-500" : "bg-red-500"}`} />
-                <span className={isConnected ? "text-green-400" : "text-red-400"}>
-                  {isConnected ? t("connected") : t("disconnected")}
-                </span>
+                <div className={`w-2 h-2 rounded-full ${statusDotClass}`} />
+                <span className={otherOnline ? "text-green-400" : "text-muted-foreground"}>{statusText}</span>
+
                 <span className="text-muted-foreground">•</span>
                 <Lock className="w-3 h-3 text-accent flex-shrink-0" />
                 <span className="text-muted-foreground truncate">{t("realTimeChat")}</span>
@@ -264,7 +262,6 @@ export default function ChatView({
         </div>
       </div>
 
-      {/* Messages */}
       <div
         className="chat-messages custom-scrollbar px-3 md:px-4 py-3 space-y-3"
         style={{ paddingBottom: "calc(92px + env(safe-area-inset-bottom))" }}
@@ -280,7 +277,6 @@ export default function ChatView({
           <Message key={m.id} message={m} isOwn={m.senderId === currentUser.id} otherUser={selectedChat.otherUser} />
         ))}
 
-        {/* Typing bubble bleibt wie gehabt */}
         {isOtherTyping && (
           <div className="flex items-start gap-2">
             <div className="w-8 h-8 bg-muted rounded-full flex items-center justify-center flex-shrink-0">
@@ -299,7 +295,6 @@ export default function ChatView({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
       <div className="chat-input-fixed chat-input-area">
         <div className="px-2 py-2 flex items-end gap-2 flex-nowrap">
           <Button
