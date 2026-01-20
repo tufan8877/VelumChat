@@ -4,7 +4,6 @@ import type { User, Chat, Message } from "@shared/schema";
 function storageKey(userId: number) {
   return `chat_cutoffs_v1_${userId}`;
 }
-
 function loadCutoffs(userId: number): Record<string, string> {
   try {
     const raw = localStorage.getItem(storageKey(userId));
@@ -16,13 +15,11 @@ function loadCutoffs(userId: number): Record<string, string> {
     return {};
   }
 }
-
 function saveCutoffs(userId: number, data: Record<string, string>) {
   try {
     localStorage.setItem(storageKey(userId), JSON.stringify(data));
   } catch {}
 }
-
 function getAuthToken(): string | null {
   try {
     const raw = localStorage.getItem("user");
@@ -33,12 +30,10 @@ function getAuthToken(): string | null {
     return localStorage.getItem("token");
   }
 }
-
-function toMs(dateLike: any): number {
-  const t = new Date(dateLike).getTime();
+function toMs(v: any): number {
+  const t = new Date(v).getTime();
   return Number.isFinite(t) ? t : 0;
 }
-
 function toBool(v: any): boolean {
   if (v === true) return true;
   if (v === false) return false;
@@ -52,7 +47,7 @@ function toBool(v: any): boolean {
   return false;
 }
 
-// ✅ Abortable fetch helper
+// Abortable fetch helper
 async function authedFetch(url: string, init?: RequestInit, timeoutMs = 15000) {
   const token = getAuthToken();
   if (!token) throw new Error("Missing token");
@@ -80,22 +75,14 @@ async function authedFetch(url: string, init?: RequestInit, timeoutMs = 15000) {
       const msg = json?.message || `HTTP ${res.status}`;
       throw new Error(msg);
     }
-
     return json;
   } finally {
     clearTimeout(timer);
   }
 }
 
-// ✅ Upload helper
-async function uploadFile(file: File, timeoutMs = 30000): Promise<{
-  ok: boolean;
-  url: string;
-  filename?: string;
-  originalName?: string;
-  size?: number;
-  mimetype?: string;
-}> {
+// Upload helper
+async function uploadFile(file: File, timeoutMs = 30000): Promise<any> {
   const token = getAuthToken();
   if (!token) throw new Error("Missing token");
 
@@ -121,7 +108,6 @@ async function uploadFile(file: File, timeoutMs = 30000): Promise<{
 
     if (!res.ok) throw new Error(json?.message || `Upload failed (HTTP ${res.status})`);
     if (!json?.ok || !json?.url) throw new Error("Upload failed (invalid response)");
-
     return json;
   } finally {
     clearTimeout(timer);
@@ -129,11 +115,9 @@ async function uploadFile(file: File, timeoutMs = 30000): Promise<{
 }
 
 export function usePersistentChats(userId?: number, socket?: any) {
-  const [persistentContacts, setPersistentContacts] = useState<
-    Array<Chat & { otherUser: User; unreadCount?: number }>
-  >([]);
+  const [persistentContacts, setPersistentContacts] = useState<Array<any>>([]);
   const [activeMessages, setActiveMessages] = useState<Map<number, Message[]>>(new Map());
-  const [selectedChat, setSelectedChat] = useState<(Chat & { otherUser: User }) | null>(null);
+  const [selectedChat, setSelectedChat] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   const [unreadCounts, setUnreadCounts] = useState<Map<number, number>>(new Map());
@@ -146,13 +130,9 @@ export function usePersistentChats(userId?: number, socket?: any) {
 
   const cutoffsRef = useRef<Record<string, string>>({});
 
-  // ✅ Presence cache: userId -> online
-  // Default = offline. Nur WS user_status setzt true.
+  // Presence cache: userId -> online
   const presenceRef = useRef<Map<number, boolean>>(new Map());
 
-  // --------------------------
-  // Typing helpers
-  // --------------------------
   const clearTypingTimer = useCallback((chatId: number) => {
     const t = typingTimeoutsRef.current.get(chatId);
     if (t) clearTimeout(t);
@@ -168,9 +148,6 @@ export function usePersistentChats(userId?: number, socket?: any) {
     });
   }, []);
 
-  // --------------------------
-  // Self-destruct timers
-  // --------------------------
   const clearTimer = (messageId: number) => {
     const t = deletionTimersRef.current.get(messageId);
     if (t) clearTimeout(t);
@@ -180,8 +157,7 @@ export function usePersistentChats(userId?: number, socket?: any) {
   const scheduleMessageDeletion = useCallback((message: Message) => {
     try {
       const expiresAtMs = toMs((message as any).expiresAt);
-      const now = Date.now();
-      const ms = Math.max(expiresAtMs - now, 200);
+      const ms = Math.max(expiresAtMs - Date.now(), 200);
 
       clearTimer(message.id);
 
@@ -196,29 +172,14 @@ export function usePersistentChats(userId?: number, socket?: any) {
       }, ms);
 
       deletionTimersRef.current.set(message.id, timer);
-    } catch (e) {
-      console.error("scheduleMessageDeletion error:", e);
-    }
+    } catch {}
   }, []);
 
-  // --------------------------
-  // Cutoff helpers
-  // --------------------------
   const getCutoffMs = useCallback(
     (chatId: number): number => {
       if (!userId) return 0;
       const iso = cutoffsRef.current[String(chatId)];
       return iso ? toMs(iso) : 0;
-    },
-    [userId]
-  );
-
-  const setCutoffNow = useCallback(
-    (chatId: number) => {
-      if (!userId) return;
-      const nowIso = new Date().toISOString();
-      cutoffsRef.current[String(chatId)] = nowIso;
-      saveCutoffs(userId, cutoffsRef.current);
     },
     [userId]
   );
@@ -232,9 +193,6 @@ export function usePersistentChats(userId?: number, socket?: any) {
     [getCutoffMs]
   );
 
-  // --------------------------
-  // Load messages (nur wenn Chat geöffnet wird)
-  // --------------------------
   const loadActiveMessages = useCallback(
     async (chatId: number) => {
       try {
@@ -248,8 +206,7 @@ export function usePersistentChats(userId?: number, socket?: any) {
         });
 
         msgs.forEach((m: Message) => scheduleMessageDeletion(m));
-      } catch (e) {
-        console.error(`❌ loadActiveMessages chat=${chatId}:`, e);
+      } catch {
         setActiveMessages((prev) => {
           const next = new Map(prev);
           next.set(chatId, []);
@@ -257,12 +214,43 @@ export function usePersistentChats(userId?: number, socket?: any) {
         });
       }
     },
-    [scheduleMessageDeletion, filterByCutoff]
+    [filterByCutoff, scheduleMessageDeletion]
   );
 
-  // --------------------------
-  // ✅ Load contacts (Presence aus presenceRef, DB ignorieren)
-  // --------------------------
+  // ✅ apply presence for a userId into all chats + selected chat
+  const applyPresence = useCallback((uid: number, online: boolean) => {
+    presenceRef.current.set(uid, online);
+
+    setPersistentContacts((prev) =>
+      prev.map((c: any) => {
+        if (Number(c?.otherUser?.id) !== uid) return c;
+        return { ...c, otherUser: { ...c.otherUser, isOnline: online } };
+      })
+    );
+
+    setSelectedChat((prev: any) => {
+      if (!prev) return prev;
+      if (Number(prev?.otherUser?.id) !== uid) return prev;
+      return { ...prev, otherUser: { ...prev.otherUser, isOnline: online } };
+    });
+  }, []);
+
+  const setAllOffline = useCallback(() => {
+    presenceRef.current.clear();
+    setPersistentContacts((prev) =>
+      prev.map((c: any) => ({ ...c, otherUser: { ...c.otherUser, isOnline: false } }))
+    );
+    setSelectedChat((prev: any) => {
+      if (!prev) return prev;
+      return { ...prev, otherUser: { ...prev.otherUser, isOnline: false } };
+    });
+  }, []);
+
+  // ✅ If WS disconnect -> all grey
+  useEffect(() => {
+    if (!socket?.isConnected) setAllOffline();
+  }, [socket?.isConnected, setAllOffline]);
+
   const loadPersistentContacts = useCallback(async () => {
     if (!userId) return;
 
@@ -270,12 +258,12 @@ export function usePersistentChats(userId?: number, socket?: any) {
     try {
       const contacts = await authedFetch(`/api/chats/${userId}`, undefined, 15000);
 
+      // unread merge
       const serverUnread = new Map<number, number>();
       (contacts || []).forEach((c: any) => {
         let unread = 0;
         if (userId === c.participant1Id) unread = c.unreadCount1 || 0;
         else if (userId === c.participant2Id) unread = c.unreadCount2 || 0;
-
         c.unreadCount = unread;
         if (unread > 0) serverUnread.set(c.id, unread);
       });
@@ -295,6 +283,7 @@ export function usePersistentChats(userId?: number, socket?: any) {
         return new Date(bTime).getTime() - new Date(aTime).getTime();
       });
 
+      // presence from ref (NOT from DB)
       const withPresence = (sorted || []).map((c: any) => {
         const oid = Number(c?.otherUser?.id) || 0;
         const online = oid ? Boolean(presenceRef.current.get(oid)) : false;
@@ -302,30 +291,22 @@ export function usePersistentChats(userId?: number, socket?: any) {
       });
 
       setPersistentContacts(withPresence);
-    } catch (e) {
-      console.error("❌ loadPersistentContacts:", e);
+    } catch {
       setPersistentContacts([]);
     } finally {
       setIsLoading(false);
     }
   }, [userId]);
 
-  // --------------------------
-  // Select chat
-  // --------------------------
   const selectChat = useCallback(
-    async (chat: (Chat & { otherUser: User }) | null) => {
+    async (chat: any) => {
       setSelectedChat(chat);
       if (!chat || !userId) return;
 
       try {
         await authedFetch(
           `/api/chats/${chat.id}/mark-read`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({}),
-          },
+          { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) },
           15000
         );
       } catch {}
@@ -342,50 +323,11 @@ export function usePersistentChats(userId?: number, socket?: any) {
 
       await loadActiveMessages(chat.id);
 
-      setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-      }, 50);
+      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
     },
     [userId, loadActiveMessages]
   );
 
-  // --------------------------
-  // Delete chat
-  // --------------------------
-  const deleteChat = useCallback(
-    async (chatId: number) => {
-      if (!userId) return;
-
-      setCutoffNow(chatId);
-
-      setActiveMessages((prev) => {
-        const next = new Map(prev);
-        next.set(chatId, []);
-        return next;
-      });
-
-      setSelectedChat((prev) => (prev?.id === chatId ? null : prev));
-
-      setUnreadCounts((prev) => {
-        const next = new Map(prev);
-        next.delete(chatId);
-        return next;
-      });
-
-      try {
-        await authedFetch(`/api/chats/${chatId}/delete`, { method: "POST" }, 15000);
-      } catch (e) {
-        console.error("deleteChat server failed:", e);
-      }
-
-      await loadPersistentContacts();
-    },
-    [userId, setCutoffNow, loadPersistentContacts]
-  );
-
-  // --------------------------
-  // Send typing
-  // --------------------------
   const sendTyping = useCallback(
     (isTyping: boolean) => {
       if (!selectedChat || !userId) return false;
@@ -402,9 +344,6 @@ export function usePersistentChats(userId?: number, socket?: any) {
     [selectedChat, userId, socket]
   );
 
-  // --------------------------
-  // Send message (upload if file)
-  // --------------------------
   const sendMessage = useCallback(
     async (content: string, type: string = "text", destructTimerSec: number, file?: File) => {
       if (!selectedChat || !userId) return;
@@ -458,11 +397,8 @@ export function usePersistentChats(userId?: number, socket?: any) {
             );
             return next;
           });
-        } else {
-          finalContent = content;
         }
-      } catch (e) {
-        console.error("❌ Upload failed:", e);
+      } catch {
         setActiveMessages((prev) => {
           const next = new Map(prev);
           const arr = next.get(selectedChat.id) || [];
@@ -472,7 +408,7 @@ export function usePersistentChats(userId?: number, socket?: any) {
         return;
       }
 
-      const wsPayload: any = {
+      socket.send({
         type: "message",
         chatId: selectedChat.id,
         senderId: userId,
@@ -480,62 +416,34 @@ export function usePersistentChats(userId?: number, socket?: any) {
         content: finalContent,
         messageType: type,
         destructTimer: secs,
-      };
-      if (file) {
-        wsPayload.fileName = fileName || file.name;
-        wsPayload.fileSize = fileSize || file.size;
-      }
-
-      socket.send(wsPayload);
+        ...(file ? { fileName: fileName || file?.name, fileSize: fileSize || file?.size } : {}),
+      });
     },
     [selectedChat, userId, socket, scheduleMessageDeletion]
   );
 
-  // --------------------------
-  // ✅ Presence apply + FULL RESET on WS disconnect
-  // --------------------------
-  const setAllOffline = useCallback(() => {
-    presenceRef.current.clear();
-    setPersistentContacts((prev) =>
-      prev.map((c: any) => ({
-        ...c,
-        otherUser: { ...c.otherUser, isOnline: false },
-      }))
-    );
-    setSelectedChat((prev) => {
-      if (!prev) return prev;
-      return { ...prev, otherUser: { ...prev.otherUser, isOnline: false } };
-    });
-  }, []);
-
-  const applyPresence = useCallback((uid: number, isOnline: boolean) => {
-    presenceRef.current.set(uid, isOnline);
-
-    setPersistentContacts((prev) =>
-      prev.map((c: any) => {
-        if (Number(c?.otherUser?.id) !== uid) return c;
-        return { ...c, otherUser: { ...c.otherUser, isOnline } };
-      })
-    );
-
-    setSelectedChat((prev) => {
-      if (!prev) return prev;
-      if (Number(prev?.otherUser?.id) !== uid) return prev;
-      return { ...prev, otherUser: { ...prev.otherUser, isOnline } };
-    });
-  }, []);
-
-  // Wenn WS disconnect -> alles offline (grau)
-  useEffect(() => {
-    const connected = Boolean(socket?.isConnected);
-    if (!connected) setAllOffline();
-  }, [socket?.isConnected, setAllOffline]);
-
-  // --------------------------
-  // Incoming WS
-  // --------------------------
+  // ✅ Incoming WS: typing, user_status, online_users, new_message
   useEffect(() => {
     if (!socket?.on || !userId) return;
+
+    const onTyping = (data: any) => {
+      if (data?.type !== "typing") return;
+      const chatId = Number(data.chatId) || 0;
+      const receiverId = Number(data.receiverId) || 0;
+      const senderId = Number(data.senderId) || 0;
+      if (!chatId || receiverId !== userId || senderId === userId) return;
+
+      clearTypingTimer(chatId);
+      setTypingState(chatId, Boolean(data.isTyping));
+
+      if (data.isTyping) {
+        const t = setTimeout(() => {
+          setTypingState(chatId, false);
+          clearTypingTimer(chatId);
+        }, 3000);
+        typingTimeoutsRef.current.set(chatId, t);
+      }
+    };
 
     const onUserStatus = (data: any) => {
       if (data?.type !== "user_status") return;
@@ -544,8 +452,19 @@ export function usePersistentChats(userId?: number, socket?: any) {
       applyPresence(uid, toBool(data.isOnline));
     };
 
+    const onOnlineUsers = (data: any) => {
+      if (data?.type !== "online_users") return;
+      const ids: number[] = Array.isArray(data.userIds) ? data.userIds.map((x: any) => Number(x)).filter(Boolean) : [];
+      ids.forEach((uid) => {
+        if (uid && uid !== userId) applyPresence(uid, true);
+      });
+      // alle anderen die NICHT in list sind -> bleiben offline
+    };
+
     const onMsg = (data: any) => {
+      if (data?.type === "typing") return onTyping(data);
       if (data?.type === "user_status") return onUserStatus(data);
+      if (data?.type === "online_users") return onOnlineUsers(data);
 
       if (data?.type !== "new_message" || !data.message) return;
       const m: any = data.message;
@@ -563,7 +482,6 @@ export function usePersistentChats(userId?: number, socket?: any) {
         if (!arr.some((x: any) => x.id === m.id)) next.set(m.chatId, [...arr, m]);
         return next;
       });
-
       scheduleMessageDeletion(m);
 
       if (!selectedChat || selectedChat.id !== m.chatId) {
@@ -578,40 +496,35 @@ export function usePersistentChats(userId?: number, socket?: any) {
       setTimeout(() => loadPersistentContacts(), 200);
     };
 
+    socket.on("typing", onTyping);
     socket.on("user_status", onUserStatus);
+    socket.on("online_users", onOnlineUsers);
     socket.on("message", onMsg);
 
     return () => {
+      socket.off?.("typing", onTyping);
       socket.off?.("user_status", onUserStatus);
+      socket.off?.("online_users", onOnlineUsers);
       socket.off?.("message", onMsg);
     };
   }, [
     socket,
     userId,
     selectedChat,
+    getCutoffMs,
     scheduleMessageDeletion,
     loadPersistentContacts,
-    getCutoffMs,
+    clearTypingTimer,
+    setTypingState,
     applyPresence,
   ]);
 
-  // --------------------------
-  // Initial load
-  // --------------------------
+  // initial load
   useEffect(() => {
     if (!userId) return;
     cutoffsRef.current = loadCutoffs(userId);
     loadPersistentContacts();
   }, [userId, loadPersistentContacts]);
-
-  useEffect(() => {
-    return () => {
-      deletionTimersRef.current.forEach((t) => clearTimeout(t));
-      deletionTimersRef.current.clear();
-      typingTimeoutsRef.current.forEach((t) => clearTimeout(t));
-      typingTimeoutsRef.current.clear();
-    };
-  }, []);
 
   const messages = selectedChat ? activeMessages.get(selectedChat.id) || [] : [];
   const isOtherTyping = selectedChat ? Boolean(typingByChat.get(selectedChat.id)) : false;
@@ -629,6 +542,5 @@ export function usePersistentChats(userId?: number, socket?: any) {
     messagesEndRef,
     loadPersistentContacts,
     unreadCounts,
-    deleteChat,
   };
 }
