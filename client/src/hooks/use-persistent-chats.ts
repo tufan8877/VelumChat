@@ -39,6 +39,19 @@ function toMs(dateLike: any): number {
   return Number.isFinite(t) ? t : 0;
 }
 
+function toBool(v: any): boolean {
+  if (v === true) return true;
+  if (v === false) return false;
+  if (v === 1 || v === "1") return true;
+  if (v === 0 || v === "0") return false;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    if (s === "true") return true;
+    if (s === "false") return false;
+  }
+  return false;
+}
+
 // ✅ Abortable fetch helper
 async function authedFetch(url: string, init?: RequestInit, timeoutMs = 15000) {
   const token = getAuthToken();
@@ -133,7 +146,8 @@ export function usePersistentChats(userId?: number, socket?: any) {
 
   const cutoffsRef = useRef<Record<string, string>>({});
 
-  // ✅ Presence: Default OFFLINE. Nur echte WS Events setzen online.
+  // ✅ Presence cache: userId -> online
+  // Default = offline. Nur WS user_status setzt true.
   const presenceRef = useRef<Map<number, boolean>>(new Map());
 
   // --------------------------
@@ -247,7 +261,7 @@ export function usePersistentChats(userId?: number, socket?: any) {
   );
 
   // --------------------------
-  // ✅ Load contacts (default offline)
+  // ✅ Load contacts (Presence aus presenceRef, DB ignorieren)
   // --------------------------
   const loadPersistentContacts = useCallback(async () => {
     if (!userId) return;
@@ -256,7 +270,6 @@ export function usePersistentChats(userId?: number, socket?: any) {
     try {
       const contacts = await authedFetch(`/api/chats/${userId}`, undefined, 15000);
 
-      // Unread server
       const serverUnread = new Map<number, number>();
       (contacts || []).forEach((c: any) => {
         let unread = 0;
@@ -267,7 +280,6 @@ export function usePersistentChats(userId?: number, socket?: any) {
         if (unread > 0) serverUnread.set(c.id, unread);
       });
 
-      // merge unread
       setUnreadCounts((prev) => {
         const next = new Map(prev);
         for (const [chatId, cnt] of serverUnread.entries()) {
@@ -283,14 +295,10 @@ export function usePersistentChats(userId?: number, socket?: any) {
         return new Date(bTime).getTime() - new Date(aTime).getTime();
       });
 
-      // ✅ Presence überschreibt DB: default OFFLINE, nur WS setzt true
       const withPresence = (sorted || []).map((c: any) => {
         const oid = Number(c?.otherUser?.id) || 0;
         const online = oid ? Boolean(presenceRef.current.get(oid)) : false;
-        return {
-          ...c,
-          otherUser: { ...c.otherUser, isOnline: online },
-        };
+        return { ...c, otherUser: { ...c.otherUser, isOnline: online } };
       });
 
       setPersistentContacts(withPresence);
@@ -484,8 +492,22 @@ export function usePersistentChats(userId?: number, socket?: any) {
   );
 
   // --------------------------
-  // ✅ Apply presence to UI
+  // ✅ Presence apply + FULL RESET on WS disconnect
   // --------------------------
+  const setAllOffline = useCallback(() => {
+    presenceRef.current.clear();
+    setPersistentContacts((prev) =>
+      prev.map((c: any) => ({
+        ...c,
+        otherUser: { ...c.otherUser, isOnline: false },
+      }))
+    );
+    setSelectedChat((prev) => {
+      if (!prev) return prev;
+      return { ...prev, otherUser: { ...prev.otherUser, isOnline: false } };
+    });
+  }, []);
+
   const applyPresence = useCallback((uid: number, isOnline: boolean) => {
     presenceRef.current.set(uid, isOnline);
 
@@ -503,49 +525,30 @@ export function usePersistentChats(userId?: number, socket?: any) {
     });
   }, []);
 
+  // Wenn WS disconnect -> alles offline (grau)
+  useEffect(() => {
+    const connected = Boolean(socket?.isConnected);
+    if (!connected) setAllOffline();
+  }, [socket?.isConnected, setAllOffline]);
+
   // --------------------------
   // Incoming WS
   // --------------------------
   useEffect(() => {
     if (!socket?.on || !userId) return;
 
-    const onTyping = (data: any) => {
-      if (data?.type !== "typing") return;
-
-      const chatId = Number(data.chatId) || 0;
-      const senderId = Number(data.senderId) || 0;
-      const receiverId = Number(data.receiverId) || 0;
-      const isTyping = Boolean(data.isTyping);
-
-      if (!chatId || receiverId !== userId) return;
-      if (senderId === userId) return;
-
-      clearTypingTimer(chatId);
-      setTypingState(chatId, isTyping);
-
-      if (isTyping) {
-        const t = setTimeout(() => {
-          setTypingState(chatId, false);
-          clearTypingTimer(chatId);
-        }, 3000);
-        typingTimeoutsRef.current.set(chatId, t);
-      }
-    };
-
     const onUserStatus = (data: any) => {
       if (data?.type !== "user_status") return;
       const uid = Number(data.userId) || 0;
       if (!uid) return;
-      applyPresence(uid, Boolean(data.isOnline));
+      applyPresence(uid, toBool(data.isOnline));
     };
 
     const onMsg = (data: any) => {
-      if (data?.type === "typing") return onTyping(data);
       if (data?.type === "user_status") return onUserStatus(data);
 
       if (data?.type !== "new_message" || !data.message) return;
       const m: any = data.message;
-
       if (m.receiverId !== userId) return;
 
       const cutoff = getCutoffMs(m.chatId);
@@ -575,12 +578,10 @@ export function usePersistentChats(userId?: number, socket?: any) {
       setTimeout(() => loadPersistentContacts(), 200);
     };
 
-    socket.on("typing", onTyping);
     socket.on("user_status", onUserStatus);
     socket.on("message", onMsg);
 
     return () => {
-      socket.off?.("typing", onTyping);
       socket.off?.("user_status", onUserStatus);
       socket.off?.("message", onMsg);
     };
@@ -591,8 +592,6 @@ export function usePersistentChats(userId?: number, socket?: any) {
     scheduleMessageDeletion,
     loadPersistentContacts,
     getCutoffMs,
-    clearTypingTimer,
-    setTypingState,
     applyPresence,
   ]);
 
