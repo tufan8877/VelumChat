@@ -16,15 +16,13 @@ import {
 import { db } from "./db";
 import { eq, and, or, desc, asc, sql, ne, isNull } from "drizzle-orm";
 
-/* =========================================================
-   STORAGE INTERFACE
-========================================================= */
 export interface IStorage {
   // Users
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUserOnlineStatus(id: number, isOnline: boolean): Promise<void>;
+  updateUsername(id: number, username: string): Promise<User>;
 
   // Messages
   createMessage(message: InsertMessage & { expiresAt: Date }): Promise<Message>;
@@ -48,23 +46,14 @@ export interface IStorage {
 
   // Block / Delete chat
   blockUser(blockerId: number, blockedId: number): Promise<void>;
-
-  // ✅ Delete with timestamp (cutoff)
   deleteChatForUser(userId: number, chatId: number): Promise<void>;
   getDeletedAtForUserChat(userId: number, chatId: number): Promise<Date | null>;
 
-  // (legacy helpers)
   isChatDeletedForUser(userId: number, chatId: number): Promise<boolean>;
   reactivateChatForUser(userId: number, chatId: number): Promise<void>;
 }
 
-/* =========================================================
-   DATABASE STORAGE (Render / Postgres)
-========================================================= */
 class DatabaseStorage implements IStorage {
-  // --------------------
-  // Users
-  // --------------------
   async getUser(id: number): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user || undefined;
@@ -81,26 +70,21 @@ class DatabaseStorage implements IStorage {
   }
 
   async updateUserOnlineStatus(id: number, isOnline: boolean): Promise<void> {
-    await db
-      .update(users)
-      .set({ isOnline, lastSeen: new Date() } as any)
-      .where(eq(users.id, id));
+    await db.update(users).set({ isOnline, lastSeen: new Date() } as any).where(eq(users.id, id));
   }
 
-  // --------------------
-  // Messages
-  // --------------------
+  async updateUsername(id: number, username: string): Promise<User> {
+    const [updated] = await db.update(users).set({ username } as any).where(eq(users.id, id)).returning();
+    return updated;
+  }
+
   async createMessage(message: InsertMessage & { expiresAt: Date }): Promise<Message> {
     const [msg] = await db.insert(messages).values(message as any).returning();
     return msg;
   }
 
   async getMessagesByChat(chatId: number): Promise<Message[]> {
-    return await db
-      .select()
-      .from(messages)
-      .where(eq(messages.chatId, chatId))
-      .orderBy(asc(messages.createdAt));
+    return await db.select().from(messages).where(eq(messages.chatId, chatId)).orderBy(asc(messages.createdAt));
   }
 
   async deleteExpiredMessages(): Promise<number> {
@@ -109,9 +93,6 @@ class DatabaseStorage implements IStorage {
     return (result?.rowCount ?? result?.changes ?? 0) as number;
   }
 
-  // --------------------
-  // Chats
-  // --------------------
   async createChat(chat: InsertChat): Promise<Chat> {
     const [created] = await db.insert(chats).values(chat as any).returning();
     return created;
@@ -136,16 +117,8 @@ class DatabaseStorage implements IStorage {
         )
       )
       .leftJoin(messages, eq(messages.id, chats.lastMessageId))
-      .leftJoin(
-        deletedChats,
-        and(eq(deletedChats.chatId, chats.id), eq(deletedChats.userId, userId))
-      )
-      .where(
-        and(
-          or(eq(chats.participant1Id, userId), eq(chats.participant2Id, userId)),
-          isNull(deletedChats.id) // ✅ hide deleted chats in list
-        )
-      )
+      .leftJoin(deletedChats, and(eq(deletedChats.chatId, chats.id), eq(deletedChats.userId, userId)))
+      .where(and(or(eq(chats.participant1Id, userId), eq(chats.participant2Id, userId)), isNull(deletedChats.id)))
       .orderBy(desc(chats.lastMessageTimestamp), desc(chats.createdAt));
 
     return rows.map((r) => ({
@@ -195,15 +168,9 @@ class DatabaseStorage implements IStorage {
     if (!chat) return;
 
     if (chat.participant1Id === userId) {
-      await db
-        .update(chats)
-        .set({ unreadCount1: sql`${chats.unreadCount1} + 1` } as any)
-        .where(eq(chats.id, chatId));
+      await db.update(chats).set({ unreadCount1: sql`${chats.unreadCount1} + 1` } as any).where(eq(chats.id, chatId));
     } else if (chat.participant2Id === userId) {
-      await db
-        .update(chats)
-        .set({ unreadCount2: sql`${chats.unreadCount2} + 1` } as any)
-        .where(eq(chats.id, chatId));
+      await db.update(chats).set({ unreadCount2: sql`${chats.unreadCount2} + 1` } as any).where(eq(chats.id, chatId));
     }
   }
 
@@ -218,9 +185,6 @@ class DatabaseStorage implements IStorage {
     }
   }
 
-  // --------------------
-  // Search
-  // --------------------
   async searchUsers(query: string, excludeId: number): Promise<User[]> {
     const validExcludeId = Number.isFinite(excludeId) ? excludeId : 0;
 
@@ -231,36 +195,22 @@ class DatabaseStorage implements IStorage {
       .limit(10);
   }
 
-  // --------------------
-  // Block / Deleted chats
-  // --------------------
   async blockUser(blockerId: number, blockedId: number): Promise<void> {
     await db.insert(blockedUsers).values({ blockerId, blockedId } as any).onConflictDoNothing();
   }
 
-  /**
-   * ✅ Delete = set deletedAt cutoff
-   * SAFE Version (works even if DB has no unique constraint)
-   */
   async deleteChatForUser(userId: number, chatId: number): Promise<void> {
     const now = new Date();
-
-    // 1) check if row exists
     const [existing] = await db
       .select({ id: deletedChats.id })
       .from(deletedChats)
       .where(and(eq(deletedChats.userId, userId), eq(deletedChats.chatId, chatId)));
 
     if (existing?.id) {
-      // 2) update existing
-      await db
-        .update(deletedChats)
-        .set({ deletedAt: now } as any)
-        .where(eq(deletedChats.id, existing.id));
+      await db.update(deletedChats).set({ deletedAt: now } as any).where(eq(deletedChats.id, existing.id));
       return;
     }
 
-    // 3) insert new
     await db.insert(deletedChats).values({ userId, chatId, deletedAt: now } as any);
   }
 
@@ -281,16 +231,10 @@ class DatabaseStorage implements IStorage {
     return !!row?.id;
   }
 
-  // ⚠️ Manuell möglich, wird aber NICHT mehr automatisch beim Senden gemacht.
   async reactivateChatForUser(userId: number, chatId: number): Promise<void> {
-    await db
-      .delete(deletedChats)
-      .where(and(eq(deletedChats.userId, userId), eq(deletedChats.chatId, chatId)));
+    await db.delete(deletedChats).where(and(eq(deletedChats.userId, userId), eq(deletedChats.chatId, chatId)));
   }
 }
 
-/* =========================================================
-   SINGLE EXPORT
-========================================================= */
 export const storage: IStorage = new DatabaseStorage();
 export default storage;
