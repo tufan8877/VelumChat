@@ -2,9 +2,10 @@ import React, { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useLanguage } from "@/lib/i18n";
 import Message from "./message";
-import { Paperclip, Send, Smile, Lock, Clock, MoreVertical, Shield, ArrowLeft } from "lucide-react";
+import { Paperclip, Send, Smile, Lock, Clock, MoreVertical, Shield, ArrowLeft, Trash2, UserX } from "lucide-react";
 import type { User, Chat, Message as MessageType } from "@shared/schema";
 
 interface ChatViewProps {
@@ -16,6 +17,10 @@ interface ChatViewProps {
   isOtherTyping: boolean;
   isConnected: boolean;
   onBackToList: () => void;
+
+  // ✅ NEW:
+  onDeleteChat: (chatId: number) => Promise<void> | void;
+  onBlockUser: (userId: number) => Promise<void> | void;
 }
 
 export default function ChatView({
@@ -27,6 +32,8 @@ export default function ChatView({
   isOtherTyping,
   isConnected,
   onBackToList,
+  onDeleteChat,
+  onBlockUser,
 }: ChatViewProps) {
   const [messageInput, setMessageInput] = useState("");
   const [destructTimer, setDestructTimer] = useState("300");
@@ -234,7 +241,7 @@ export default function ChatView({
                 <span className={otherOnline ? "text-green-400" : "text-muted-foreground"}>{statusText}</span>
                 <span className="text-muted-foreground">•</span>
                 <Lock className="w-3 h-3 text-accent flex-shrink-0" />
-                <span className="text-muted-foreground truncate">{t("realTimeChat")}</span>
+                {/* ✅ Removed "Real-time chat" text */}
               </div>
             </div>
           </div>
@@ -260,14 +267,48 @@ export default function ChatView({
               </Select>
             </div>
 
-            <Button variant="ghost" size="icon" className="w-10 h-10 rounded-full touch-target" aria-label="Menu">
-              <MoreVertical className="w-5 h-5" />
-            </Button>
+            {/* ✅ Menu: delete chat + block user */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="w-10 h-10 rounded-full touch-target" aria-label="Menu">
+                  <MoreVertical className="w-5 h-5" />
+                </Button>
+              </DropdownMenuTrigger>
+
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuItem
+                  className="text-red-600 focus:text-red-600"
+                  onClick={async () => {
+                    const ok = window.confirm("Chat wirklich löschen?");
+                    if (!ok) return;
+                    await onDeleteChat(selectedChat.id);
+                    onBackToList();
+                  }}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Chat löschen
+                </DropdownMenuItem>
+
+                <DropdownMenuItem
+                  className="text-red-600 focus:text-red-600"
+                  onClick={async () => {
+                    const ok = window.confirm(`User "${selectedChat.otherUser.username}" blockieren?`);
+                    if (!ok) return;
+                    await onBlockUser(selectedChat.otherUser.id);
+                    // optional: zurück zur liste
+                    onBackToList();
+                  }}
+                >
+                  <UserX className="w-4 h-4 mr-2" />
+                  User blockieren
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </div>
 
-      {/* Messages: genug Platz unten für Input */}
+      {/* Messages */}
       <div
         ref={scrollRef}
         className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden custom-scrollbar px-3 md:px-4 py-3 space-y-3"
@@ -302,7 +343,7 @@ export default function ChatView({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input sticky + safe area */}
+      {/* Input sticky */}
       <div className="sticky bottom-0 w-full bg-background border-t border-border" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div className="px-2 pt-2 flex items-end gap-2 flex-nowrap">
           <Button
