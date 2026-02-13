@@ -12,7 +12,7 @@ export type Language = keyof typeof languages;
 export const translations = {
   en: {
     // Welcome Page
-    welcome: 'Welcome to Whispergram',
+    welcome: 'Welcome to Velumchat',
     welcomeDescription: 'Secure, anonymous messaging with end-to-end encryption',
     createAccount: 'Create Account',
     login: 'Login',
@@ -241,7 +241,7 @@ export const translations = {
   
   de: {
     // Welcome Page
-    welcome: 'Willkommen bei Whispergram',
+    welcome: 'Willkommen bei Velumchat',
     welcomeDescription: 'Sichere, anonyme Nachrichten mit Ende-zu-Ende-Verschlüsselung',
     createAccount: 'Konto erstellen',
     login: 'Anmelden',
@@ -471,7 +471,7 @@ export const translations = {
   
   ru: {
     // Welcome Page
-    welcome: 'Добро пожаловать в Whispergram',
+    welcome: 'Добро пожаловать в Velumchat',
     welcomeDescription: 'Безопасные анонимные сообщения с шифрованием точка-точка',
     createAccount: 'Создать аккаунт',
     login: 'Войти',
@@ -676,7 +676,7 @@ export const translations = {
   
   fr: {
     // Welcome Page
-    welcome: 'Bienvenue sur Whispergram',
+    welcome: 'Bienvenue sur Velumchat',
     welcomeDescription: 'Messagerie sécurisée et anonyme avec chiffrement de bout en bout',
     createAccount: 'Créer un compte',
     login: 'Se connecter',
@@ -865,7 +865,7 @@ export const translations = {
   
   es: {
     // Welcome Page
-    welcome: 'Bienvenido a Whispergram',
+    welcome: 'Bienvenido a Velumchat',
     welcomeDescription: 'Mensajería segura y anónima con cifrado de extremo a extremo',
     createAccount: 'Crear cuenta',
     login: 'Iniciar sesión',
@@ -1055,7 +1055,7 @@ export const translations = {
   
   tr: {
     // Welcome Page
-    welcome: 'Whispergram\'a Hoş Geldiniz',
+    welcome: 'Velumchat\'a Hoş Geldiniz',
     welcomeDescription: 'Uçtan uca şifrelemeli güvenli, anonim mesajlaşma',
     createAccount: 'Hesap Oluştur',
     login: 'Giriş Yap',
