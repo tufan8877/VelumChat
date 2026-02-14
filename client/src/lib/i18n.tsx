@@ -1253,7 +1253,7 @@ export const translations = {
     faq9Question: "Hizmet yasadışı faaliyetler için kullanılabilir mi?",
     faq9Answer: "Kullanıcılar yerel yasalara uymakla sorumludur. Gizlilik araçları sağlasak da yasadışı faaliyetleri desteklemiyoruz.",
     faq10Question: "Kaynak kodu mevcut mu?",
-    faq10Answer: "Evet. Whispergram açık kaynaklıdır ve güvenlik için denetlenebilir. Kod inceleme ve kendi barındırma için mevcuttur.",
+    faq10Answer: "Evet. VelumChat açık kaynaklıdır ve güvenlik için denetlenebilir. Kod inceleme ve kendi barındırma için mevcuttur.",
 
     // Security notice translations - Turkish
     messagesNotStored: "Mesajlarınız hiçbir zaman sunucularımızda saklanmaz",
