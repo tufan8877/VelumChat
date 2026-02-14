@@ -42,8 +42,8 @@ export default function ImprintPage() {
             <div>
               <h3 className="font-semibold mb-2">{t('contact')}</h3>
               <p className="text-muted-foreground">
-                {t('contactInfo')}: contactwhispergram@gmail.com<br />
-                {t('technicalSupport')}: contactwhispergram@gmail.com
+                {t('contactInfo')}: contactvelumchat@gmail.com<br />
+                {t('technicalSupport')}: contactvelumchat@gmail.com
               </p>
             </div>
 
