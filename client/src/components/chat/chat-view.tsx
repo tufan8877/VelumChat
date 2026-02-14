@@ -5,7 +5,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useLanguage } from "@/lib/i18n";
 import Message from "./message";
-import { Paperclip, Send, Smile, Lock, Clock, MoreVertical, Shield, ArrowLeft, Trash2, UserX } from "lucide-react";
+import {
+  Paperclip,
+  Send,
+  Smile,
+  Lock,
+  Clock,
+  MoreVertical,
+  Shield,
+  ArrowLeft,
+  Trash2,
+  UserX,
+} from "lucide-react";
 import type { User, Chat, Message as MessageType } from "@shared/schema";
 
 interface ChatViewProps {
@@ -17,9 +28,17 @@ interface ChatViewProps {
   isOtherTyping: boolean;
   isConnected: boolean;
   onBackToList: () => void;
+
   onDeleteChat: (chatId: number) => Promise<void> | void;
   onBlockUser: (userId: number) => Promise<void> | void;
 }
+
+// iOS/Safari helper (prevents smooth-scroll flicker when keyboard is open)
+const isIOS = () => {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  return /iPad|iPhone|iPod/.test(ua) || (ua.includes("Mac") && "ontouchend" in document);
+};
 
 export default function ChatView({
   currentUser,
@@ -37,7 +56,7 @@ export default function ChatView({
   const [destructTimer, setDestructTimer] = useState("300");
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const localTypingRef = useRef(false);
@@ -46,69 +65,122 @@ export default function ChatView({
 
   const { t } = useLanguage();
 
-  // ---- Cross-platform scroll constants ----
-  // Messages container has paddingBottom to not get hidden behind the sticky input.
-  const MESSAGES_BOTTOM_PADDING_PX = 170;
-  // Threshold must be bigger than paddingBottom, otherwise "nearBottom" is never true.
-  const NEAR_BOTTOM_THRESHOLD_PX = 320;
+  // ----------------------------
+  // ✅ Expiring messages (client-side hide)
+  // Server deletes them periodically, but UI should also hide them immediately when expired.
+  // ----------------------------
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNowTick(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
 
+  const visibleMessages = useMemo(() => {
+    const now = nowTick;
+    return (messages || []).filter((m: any) => {
+      if (!m) return false;
+      const exp = (m as any).expiresAt;
+      if (!exp) return true;
+      const expMs = new Date(exp).getTime();
+      return Number.isFinite(expMs) ? expMs > now : true;
+    });
+  }, [messages, nowTick]);
+
+  // ----------------------------
+  // ✅ Scroll helpers
+  // ----------------------------
   const isNearBottom = () => {
     const el = scrollRef.current;
     if (!el) return true;
-    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-    return distance < NEAR_BOTTOM_THRESHOLD_PX;
+    const distance = el.scrollHeight - (el.scrollTop + el.clientHeight);
+    return distance < 220;
   };
 
   const scrollToBottom = (smooth = true) => {
-    messagesEndRef.current?.scrollIntoView({
-      behavior: smooth ? "smooth" : "auto",
-      block: "end",
-    });
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const useSmooth = smooth && !isIOS();
+
+    try {
+      el.scrollTo({ top: el.scrollHeight, behavior: useSmooth ? "smooth" : "auto" });
+    } catch {
+      el.scrollTop = el.scrollHeight;
+    }
   };
 
-  // ✅ 1) Auto-scroll when new messages arrive (only if user is near bottom)
+  // Only autoscroll when a NEW message arrives
+  const lastMsgId = visibleMessages.length ? (visibleMessages[visibleMessages.length - 1] as any).id : null;
+
   useEffect(() => {
     if (!selectedChat) return;
-    if (messages.length === 0) return;
-    if (isNearBottom()) requestAnimationFrame(() => scrollToBottom(true));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, selectedChat?.id]);
+    if (!lastMsgId) return;
 
-  // ✅ 2) Auto-scroll when typing indicator appears and user is near bottom
-  useEffect(() => {
-    if (!selectedChat) return;
-    if (isOtherTyping && isNearBottom()) requestAnimationFrame(() => scrollToBottom(true));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOtherTyping, selectedChat?.id]);
-
-  // ✅ 3) iOS/Android keyboard handling (visualViewport)
-  // When keyboard opens -> viewport height changes -> scroll bottom if user is near bottom.
-  useEffect(() => {
-    if (!selectedChat) return;
-
-    const vv = (window as any).visualViewport as VisualViewport | undefined;
-    if (!vv) {
-      // Fallback: resize listener
-      const onResize = () => {
-        if (isNearBottom()) requestAnimationFrame(() => scrollToBottom(false));
-      };
-      window.addEventListener("resize", onResize);
-      return () => window.removeEventListener("resize", onResize);
+    if (isNearBottom()) {
+      requestAnimationFrame(() => scrollToBottom(true));
     }
-
-    const onVVResize = () => {
-      if (isNearBottom()) requestAnimationFrame(() => scrollToBottom(false));
-    };
-
-    vv.addEventListener("resize", onVVResize);
-    vv.addEventListener("scroll", onVVResize);
-    return () => {
-      vv.removeEventListener("resize", onVVResize);
-      vv.removeEventListener("scroll", onVVResize);
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedChat?.id]);
+  }, [selectedChat?.id, lastMsgId]);
 
+  useEffect(() => {
+    if (isOtherTyping && isNearBottom()) {
+      requestAnimationFrame(() => scrollToBottom(true));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOtherTyping]);
+
+  // ----------------------------
+  // ✅ Mobile keyboard / VisualViewport fix
+  // Ensures the composer stays visible and the list scroll area accounts for keyboard height.
+  // ----------------------------
+  const [composerHeight, setComposerHeight] = useState(120);
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
+
+  useEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+
+    const ro = new ResizeObserver(() => {
+      const h = el.getBoundingClientRect().height;
+      if (h && Math.abs(h - composerHeight) > 1) setComposerHeight(h);
+    });
+    ro.observe(el);
+
+    const h0 = el.getBoundingClientRect().height;
+    if (h0) setComposerHeight(h0);
+
+    return () => ro.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const vv = (window as any).visualViewport as VisualViewport | undefined;
+    if (!vv) return;
+
+    const calc = () => {
+      const offset = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+      setKeyboardOffset(offset);
+    };
+
+    calc();
+    vv.addEventListener("resize", calc);
+    vv.addEventListener("scroll", calc);
+    window.addEventListener("orientationchange", calc);
+
+    return () => {
+      vv.removeEventListener("resize", calc);
+      vv.removeEventListener("scroll", calc);
+      window.removeEventListener("orientationchange", calc);
+    };
+  }, []);
+
+  const handleFocus = () => {
+    if (isNearBottom()) requestAnimationFrame(() => scrollToBottom(false));
+  };
+
+  // ----------------------------
+  // Timer helpers
+  // ----------------------------
   const getTimerSeconds = () => {
     const s = parseInt(destructTimer, 10);
     return Number.isFinite(s) ? s : 300;
@@ -175,7 +247,8 @@ export default function ChatView({
     stopTyping();
     onSendMessage(text, "text", getTimerSeconds());
     setMessageInput("");
-    requestAnimationFrame(() => scrollToBottom(true));
+
+    requestAnimationFrame(() => scrollToBottom(false));
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -205,7 +278,7 @@ export default function ChatView({
     else onSendMessage(file.name, "file", secs, file);
 
     if (fileInputRef.current) fileInputRef.current.value = "";
-    requestAnimationFrame(() => scrollToBottom(true));
+    requestAnimationFrame(() => scrollToBottom(false));
   };
 
   const handleCameraCapture = () => {
@@ -233,12 +306,6 @@ export default function ChatView({
     return `${Math.floor(seconds / 86400)}d`;
   };
 
-  // ✅ This is the “messages you want to show”: only messages for this chat
-  const chatMessages = useMemo(() => {
-    if (!selectedChat) return [];
-    return messages.filter((m) => Number((m as any).chatId) === Number(selectedChat.id));
-  }, [messages, selectedChat]);
-
   if (!selectedChat) {
     return (
       <div className="flex-1 flex items-center justify-center bg-background text-foreground w-full overflow-x-hidden">
@@ -260,6 +327,9 @@ export default function ChatView({
 
   const statusDotClass = !isConnected ? "bg-red-500" : otherOnline ? "bg-green-500" : "bg-muted-foreground/60";
   const statusText = !isConnected ? t("connecting") : otherOnline ? t("online") : t("offline");
+
+  const composerPadBottom = `calc(env(safe-area-inset-bottom) + ${keyboardOffset}px)`;
+  const listPadBottom = `calc(${composerHeight}px + env(safe-area-inset-bottom) + ${keyboardOffset}px + 12px)`;
 
   return (
     <div className="flex-1 flex flex-col min-h-0 w-full overflow-x-hidden bg-background">
@@ -356,7 +426,7 @@ export default function ChatView({
       <div
         ref={scrollRef}
         className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden custom-scrollbar px-3 md:px-4 py-3 space-y-3"
-        style={{ paddingBottom: `calc(${MESSAGES_BOTTOM_PADDING_PX}px + env(safe-area-inset-bottom))` }}
+        style={{ paddingBottom: listPadBottom, WebkitOverflowScrolling: "touch" as any }}
       >
         <div className="text-center">
           <div className="inline-flex items-center gap-2 bg-surface rounded-full px-4 py-2 text-sm text-text-muted">
@@ -365,8 +435,13 @@ export default function ChatView({
           </div>
         </div>
 
-        {chatMessages.map((m) => (
-          <Message key={m.id} message={m} isOwn={m.senderId === currentUser.id} otherUser={selectedChat.otherUser} />
+        {visibleMessages.map((m) => (
+          <Message
+            key={(m as any).id}
+            message={m}
+            isOwn={(m as any).senderId === currentUser.id}
+            otherUser={selectedChat.otherUser}
+          />
         ))}
 
         {isOtherTyping && (
@@ -383,12 +458,14 @@ export default function ChatView({
             </div>
           </div>
         )}
-
-        <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
-      <div className="sticky bottom-0 w-full bg-background border-t border-border" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+      {/* Composer (NOT sticky) */}
+      <div
+        ref={composerRef}
+        className="flex-shrink-0 w-full bg-background border-t border-border"
+        style={{ paddingBottom: composerPadBottom }}
+      >
         <div className="px-2 pt-2 flex items-end gap-2 flex-nowrap">
           <Button
             variant="ghost"
@@ -416,12 +493,13 @@ export default function ChatView({
               value={messageInput}
               onChange={(e) => handleInputChange(e.target.value)}
               onKeyDown={handleKeyDown}
+              onFocus={handleFocus}
               className="chat-textarea resize-none pr-10"
               rows={1}
-              onFocus={() => {
-                // keyboard open -> ensure bottom visible
-                requestAnimationFrame(() => scrollToBottom(true));
-              }}
+              inputMode="text"
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
             />
             <Button
               variant="ghost"
@@ -454,7 +532,13 @@ export default function ChatView({
           </div>
         </div>
 
-        <input ref={fileInputRef} type="file" onChange={handleFileUpload} className="hidden" accept="image/*,.pdf,.doc,.docx,.txt" />
+        <input
+          ref={fileInputRef}
+          type="file"
+          onChange={handleFileUpload}
+          className="hidden"
+          accept="image/*,.pdf,.doc,.docx,.txt"
+        />
       </div>
     </div>
   );
