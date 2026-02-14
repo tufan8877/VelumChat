@@ -22,6 +22,13 @@ interface ChatViewProps {
   onBlockUser: (userId: number) => Promise<void> | void;
 }
 
+/**
+ * ✅ FIXES (iOS/Android/Desktop):
+ * - Prevents the whole page from scrolling when new messages arrive (input bar stays visible).
+ * - Avoids Safari "sticky inside overflow" quirks by using an absolutely-positioned composer inside a relative container.
+ * - Uses ResizeObserver to keep the message list padded to the current composer height.
+ * - Uses visualViewport (when available) to keep composer above iOS keyboard (reduces jump/flicker).
+ */
 export default function ChatView({
   currentUser,
   selectedChat,
@@ -37,17 +44,31 @@ export default function ChatView({
   const [messageInput, setMessageInput] = useState("");
   const [destructTimer, setDestructTimer] = useState("300");
 
+  // Scroll container that MUST be the only scrollable area
   const scrollRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Composer refs for dynamic height and keyboard offset
+  const composerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const localTypingRef = useRef(false);
   const typingIdleTimerRef = useRef<any>(null);
   const typingThrottleRef = useRef<number>(0);
 
-  // used to keep scroll pinned when user is at bottom (prevents "input moves down" / page scroll on iOS)
-  const shouldPinToBottomRef = useRef(true);
-
   const { t } = useLanguage();
+
+  const getTimerSeconds = () => {
+    const s = parseInt(destructTimer, 10);
+    return Number.isFinite(s) ? s : 300;
+  };
+
+  const formatDestructTimer = (seconds: number) => {
+    if (seconds < 60) return `${seconds}s`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
+    return `${Math.floor(seconds / 86400)}d`;
+  };
 
   const isNearBottom = () => {
     const el = scrollRef.current;
@@ -56,59 +77,81 @@ export default function ChatView({
     return distance < 160;
   };
 
-  const scrollToBottom = (smooth = false) => {
-    const el = scrollRef.current;
-    if (!el) return;
-
-    // IMPORTANT: use scrollTop inside the message container (NOT scrollIntoView),
-    // otherwise iOS Safari may scroll the whole page and push the input out of view.
-    const top = el.scrollHeight;
-    try {
-      el.scrollTo({ top, behavior: smooth ? "smooth" : "auto" });
-    } catch {
-      el.scrollTop = top;
-    }
+  const scrollToBottom = (smooth = true) => {
+    // IMPORTANT: scrollIntoView must act inside scrollRef (not the page).
+    // Ensuring scrollRef is overflow-y:auto and parent is overflow-hidden fixes "page scroll" on iOS.
+    messagesEndRef.current?.scrollIntoView({
+      behavior: smooth ? "smooth" : "auto",
+      block: "end",
+    });
   };
 
-  // track if user has scrolled up manually
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
+  // Keep message list padded by the composer height (dynamic on mobile + when textarea grows)
+  useLayoutEffect(() => {
+    const composer = composerRef.current;
+    const list = scrollRef.current;
+    if (!composer || !list) return;
 
-    const onScroll = () => {
-      shouldPinToBottomRef.current = isNearBottom();
+    const setPad = () => {
+      const h = composer.getBoundingClientRect().height || 0;
+      // +8 for breathing room, safe-area handled in composer
+      list.style.paddingBottom = `${Math.ceil(h) + 8}px`;
     };
 
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setPad();
+
+    let ro: ResizeObserver | null = null;
+    if ("ResizeObserver" in window) {
+      ro = new ResizeObserver(() => setPad());
+      ro.observe(composer);
+    }
+
+    window.addEventListener("resize", setPad);
+    return () => {
+      window.removeEventListener("resize", setPad);
+      ro?.disconnect();
+    };
   }, []);
 
-  // keep pinned when new messages arrive, but only if user is near bottom
-  useLayoutEffect(() => {
-    if (!selectedChat) return;
-    if (!scrollRef.current) return;
+  // ✅ Keyboard handling (iOS Safari / iPadOS): keep composer above keyboard without layout jump
+  useEffect(() => {
+    const vv = (window as any).visualViewport as VisualViewport | undefined;
+    const composer = composerRef.current;
+    if (!vv || !composer) return;
 
-    if (shouldPinToBottomRef.current) {
-      // rAF avoids layout flicker while typing on iOS
-      requestAnimationFrame(() => scrollToBottom(false));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages.length, selectedChat?.id]);
+    const apply = () => {
+      // When keyboard is open, visualViewport.height shrinks.
+      // We translate composer upward by the difference between layout viewport and visual viewport bottom.
+      const offset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      composer.style.transform = offset > 0 ? `translateY(-${offset}px)` : "translateY(0px)";
+    };
 
-  // typing indicator should also keep pinned (but only if near bottom)
-  useLayoutEffect(() => {
+    apply();
+    vv.addEventListener("resize", apply);
+    vv.addEventListener("scroll", apply);
+    return () => {
+      vv.removeEventListener("resize", apply);
+      vv.removeEventListener("scroll", apply);
+      composer.style.transform = "translateY(0px)";
+    };
+  }, []);
+
+  // Auto-scroll only if user is already near bottom
+  useEffect(() => {
     if (!selectedChat) return;
-    if (isOtherTyping && shouldPinToBottomRef.current) {
+    if (messages.length === 0) return;
+
+    if (isNearBottom()) {
+      // requestAnimationFrame prevents iOS flicker/jump
       requestAnimationFrame(() => scrollToBottom(true));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOtherTyping]);
+  }, [messages, selectedChat?.id]);
 
-  const getTimerSeconds = () => {
-    const s = parseInt(destructTimer, 10);
-    return Number.isFinite(s) ? s : 300;
-  };
+  useEffect(() => {
+    if (isOtherTyping && isNearBottom()) requestAnimationFrame(() => scrollToBottom(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOtherTyping]);
 
   const sendTypingSafe = (state: boolean) => {
     if (!isConnected || !selectedChat) return;
@@ -172,9 +215,8 @@ export default function ChatView({
     onSendMessage(text, "text", getTimerSeconds());
     setMessageInput("");
 
-    // keep pinned after sending
-    shouldPinToBottomRef.current = true;
-    requestAnimationFrame(() => scrollToBottom(false));
+    // Keep focus and scroll stable on mobile
+    requestAnimationFrame(() => scrollToBottom(true));
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -204,9 +246,7 @@ export default function ChatView({
     else onSendMessage(file.name, "file", secs, file);
 
     if (fileInputRef.current) fileInputRef.current.value = "";
-
-    shouldPinToBottomRef.current = true;
-    requestAnimationFrame(() => scrollToBottom(false));
+    requestAnimationFrame(() => scrollToBottom(true));
   };
 
   const handleCameraCapture = () => {
@@ -227,16 +267,9 @@ export default function ChatView({
     cameraInput.click();
   };
 
-  const formatDestructTimer = (seconds: number) => {
-    if (seconds < 60) return `${seconds}s`;
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
-    return `${Math.floor(seconds / 86400)}d`;
-  };
-
   if (!selectedChat) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-background text-foreground w-full overflow-x-hidden">
+      <div className="flex-1 flex items-center justify-center bg-background text-foreground w-full overflow-hidden">
         <div className="text-center space-y-4 p-8">
           <div className="w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center mx-auto">
             <Shield className="w-8 h-8 text-primary" />
@@ -257,10 +290,8 @@ export default function ChatView({
   const statusText = !isConnected ? t("connecting") : otherOnline ? t("online") : t("offline");
 
   return (
-    // IMPORTANT:
-    // - min-h-0 + flex-col keeps the messages area scrollable
-    // - avoid "sticky bottom" for input on iOS Safari (causes jump/flackering)
-    <div className="flex-1 flex flex-col min-h-0 w-full overflow-x-hidden bg-background">
+    // ✅ overflow-hidden + relative ensures only the message list scrolls, not the page (fixes iPhone Safari)
+    <div className="relative flex-1 flex flex-col w-full min-h-0 overflow-hidden bg-background">
       {/* Header */}
       <div className="flex-shrink-0 w-full bg-background border-b border-border px-3 py-3 md:px-4 md:py-4">
         <div className="flex items-center justify-between gap-2 w-full">
@@ -350,10 +381,15 @@ export default function ChatView({
         </div>
       </div>
 
-      {/* Messages */}
+      {/* Messages (ONLY scrollable area) */}
       <div
         ref={scrollRef}
         className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden custom-scrollbar px-3 md:px-4 py-3 space-y-3"
+        style={{
+          // paddingBottom is managed by ResizeObserver (composer height)
+          WebkitOverflowScrolling: "touch",
+          overscrollBehavior: "contain",
+        }}
       >
         <div className="text-center">
           <div className="inline-flex items-center gap-2 bg-surface rounded-full px-4 py-2 text-sm text-text-muted">
@@ -380,10 +416,19 @@ export default function ChatView({
             </div>
           </div>
         )}
+
+        <div ref={messagesEndRef} />
       </div>
 
-      {/* Input (always visible) */}
-      <div className="flex-shrink-0 w-full bg-background border-t border-border" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+      {/* Composer (anchored, never gets pushed off-screen by message list) */}
+      <div
+        ref={composerRef}
+        className="absolute left-0 right-0 bottom-0 w-full bg-background border-t border-border"
+        style={{
+          paddingBottom: "env(safe-area-inset-bottom)",
+          willChange: "transform",
+        }}
+      >
         <div className="px-2 pt-2 flex items-end gap-2 flex-nowrap">
           <Button
             variant="ghost"
