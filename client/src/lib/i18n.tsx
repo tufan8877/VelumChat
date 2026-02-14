@@ -1,757 +1,958 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
-
 export const languages = {
-  en: "English",
-  de: "Deutsch",
-  ru: "Русский",
-  fr: "Français",
-  es: "Español",
-  tr: "Türkçe",
+  en: 'English',
+  de: 'Deutsch',
+  ru: 'Русский',
+  fr: 'Français',
+  es: 'Español',
+  tr: 'Türkçe'
 } as const;
 
 export type Language = keyof typeof languages;
 
-type Params = Record<string, string>;
-
-// ✅ Base schema: only keys you actively use (and can expand anytime)
-// This avoids “massive file” issues but keeps everything stable.
-type TranslationSchema = {
-  // Common
-  error: string;
-  success: string;
-  saving: string;
-  deleting: string;
-  blocking: string;
-
-  // Welcome / Auth
-  welcome: string;
-  welcomeDescription: string;
-  createAccount: string;
-  login: string;
-  username: string;
-  password: string;
-  chooseUsername: string;
-  chooseUsernameHint: string;
-  usernameRequired: string;
-  enterUsername: string;
-  usernameTooShort: string;
-  usernameMinLength: string;
-
-  loginSuccess: string;
-  loginFailed: string;
-  passwordRequired: string;
-  enterPassword: string;
-  passwordTooShort: string;
-  passwordMinLength: string;
-  accountCreated: string;
-  registrationFailed: string;
-  accountCreationFailed: string;
-  noPhoneRequired: string;
-  selfDestructing: string;
-  zeroDataRetention: string;
-  chooseIdentity: string;
-  enterCredentials: string;
-  features: string;
-
-  // Chat
-  searchUsers: string;
-  searchChats: string;
-  startChat: string;
-  typeMessage: string;
-  sendMessage: string;
-  online: string;
-  offline: string;
-  connecting: string;
-  connected: string;
-  disconnected: string;
-  realTimeChat: string;
-  encryptedChat: string;
-  loadingChats: string;
-  noChats: string;
-  noChatDescription: string;
-  selectChatToStart: string;
-  welcomeToWhispergram: string;
-
-  notConnected: string;
-  selectChatFirst: string;
-  fileTooLarge: string;
-  failedToReadFile: string;
-  selectChatPhoto: string;
-
-  now: string;
-
-  // Settings
-  settingsTitle: string;
-  profile: string;
-  saveProfile: string;
-  usernameLabel: string;
-  usernameDescription: string;
-  enterNewUsername: string;
-  language: string;
-  about: string;
-  aboutText: string;
-
-  profileSaved: string;
-  profileSaveError: string;
-  usernameEmpty: string;
-  usernameExists: string;
-  usernameTaken: string;
-  usernameUpdated: string;
-
-  tokenMissing: string;
-
-  // Account deletion
-  deleteAccount: string;
-  deleteAccountTitle: string;
-  deleteAccountDescription: string;
-  deleteAccountConfirm: string;
-  deleteAccountForever: string;
-  accountDeleted: string;
-  accountDeletedDesc: string;
-  accountDeleteError: string;
-};
-
-const base: Record<Language, TranslationSchema> = {
+export const translations = {
   en: {
-    // Common
-    error: "Error",
-    success: "Success",
-    saving: "Saving...",
-    deleting: "Deleting...",
-    blocking: "Blocking...",
-
-    // Welcome / Auth
-    welcome: "Welcome to Velumchat",
-    welcomeDescription: "Secure, anonymous messaging with end-to-end encryption",
-    createAccount: "Create Account",
-    login: "Login",
-    username: "Username",
-    password: "Password",
-    chooseUsername: "Choose your username",
-    chooseUsernameHint: "Pick any username you like (minimum 3 characters)",
-    usernameRequired: "Username required",
-    enterUsername: "Please enter a username",
-    usernameTooShort: "Username too short",
-    usernameMinLength: "Username must be at least 3 characters",
-
-    loginSuccess: "Successfully logged in",
-    loginFailed: "Invalid username or password",
-    passwordRequired: "Password required",
-    enterPassword: "Please enter a password",
-    passwordTooShort: "Password too short",
-    passwordMinLength: "Password must be at least 6 characters long",
-    accountCreated: "Your secure identity has been created",
-    registrationFailed: "Registration Failed",
-    accountCreationFailed: "Failed to create account",
-    noPhoneRequired: "No phone or email required",
-    selfDestructing: "Self-destructing messages",
-    zeroDataRetention: "Zero data retention",
-    chooseIdentity: "Choose Your Identity",
-    enterCredentials: "Enter your existing username and password",
-    features: "Features",
-
+    // Welcome Page
+    welcome: 'Welcome to Velumchat',
+    welcomeDescription: 'Secure, anonymous messaging with end-to-end encryption',
+    createAccount: 'Create Account',
+    login: 'Login',
+    username: 'Username',
+    password: 'Password',
+    chooseUsername: 'Choose your username',
+    chooseUsernameHint: 'Pick any username you like (minimum 3 characters)',
+    usernameRequired: 'Username required',
+    enterUsername: 'Please enter a username',
+    usernameTooShort: 'Username too short',
+    usernameMinLength: 'Username must be at least 3 characters',
+    
     // Chat
-    searchUsers: "Search users...",
-    searchChats: "Search chats...",
-    startChat: "Start Chat",
-    typeMessage: "Type a message...",
-    sendMessage: "Send",
-    online: "Online",
-    offline: "Offline",
-    connecting: "Connecting...",
-    connected: "Connected",
-    disconnected: "Disconnected",
-    realTimeChat: "Real-time chat",
-    encryptedChat: "Encrypted Chat",
-    loadingChats: "Loading chats...",
-    noChats: "No chats yet",
-    noChatDescription: "Search for users to start encrypted chats",
-    selectChatToStart: "Select a chat to start secure messaging",
-    welcomeToWhispergram: "Welcome to Whispergram",
-
-    notConnected: "Not connected! Please wait for connection to be established.",
-    selectChatFirst: "Please select a chat and ensure you're connected before uploading files.",
-    fileTooLarge: "File too large! Maximum size is 10MB.",
-    failedToReadFile: "Failed to read image file",
-    selectChatPhoto: "Please select a chat and ensure you're connected before taking photos.",
-
-    now: "now",
-
+    searchUsers: 'Search users...',
+    searchChats: 'Search chats...',
+    startChat: 'Start Chat',
+    typeMessage: 'Type a message...',
+    sendMessage: 'Send',
+    online: 'Online',
+    offline: 'Offline',
+    connecting: 'Connecting...',
+    settings: 'Settings',
+    newChat: 'New Chat',
+    noChats: 'No chats yet',
+    noChatDescription: 'Search for users to start encrypted chats',
+    encryptedChat: 'Encrypted Chat',
+    loadingChats: 'Loading chats...',
+    deleteChat: 'Delete Chat',
+    blockUser: 'Block {username}',
+    copyInviteLink: 'Copy Invite Link',
+    chatStatistics: 'Chat Statistics',
+    clearChat: 'Clear Chat',
+    autoDestruct: 'Auto-destruct',
+    chatWith: 'Chat with {username}',
+    chatStatsText: 'Chat Statistics:\n- Total Messages: {messages}\n- Partner: {partner}\n- Encryption: Active',
+    clearChatConfirm: 'Are you sure you want to clear this chat with {username}?',
+    clearChatImplemented: 'Chat clearing would be implemented here',
+    
     // Settings
-    settingsTitle: "Settings",
-    profile: "Profile",
-    saveProfile: "Save Profile",
-    usernameLabel: "Username",
-    usernameDescription:
-      'Simply enter a new name and click "Save Profile". Your username is your anonymous identity.',
-    enterNewUsername: "Enter your new username",
-    language: "Language",
-    about: "About",
-    aboutText: "VelumChat – end-to-end encrypted messaging.",
+    settingsTitle: 'Settings',
+    profile: 'Profile',
+    saveProfile: 'Save Profile',
+    security: 'Security',
+    privacy: 'Privacy',
+    usernameLabel: 'Username',
+    usernameDescription: 'Simply enter a new name and click "Save Profile". Your username is your anonymous identity.',
+    enterNewUsername: 'Enter your new username',
+    about: 'About',
+    defaultTimer: 'Default Message Timer',
+    screenLock: 'Screen Lock',
+    incognitoKeyboard: 'Incognito Keyboard',
+    readReceipts: 'Read Receipts',
+    typingIndicators: 'Typing Indicators',
+    autoDestructTime: 'Auto-destruct time for new messages',
+    typingIndicatorsDesc: 'Show when you are typing to others',
+    readReceiptsDesc: 'Let others know when you have read their messages',
+    screenLockDesc: 'Require authentication to access the app',
+    incognitoKeyboardDesc: 'Disable keyboard learning and suggestions',
+    language: 'Language',
+    deleteAllData: 'Delete All Data',
+    permanentAccount: 'Permanent Account',
+    permanentAccountDescription: 'Usernames are permanent like Wickr Me. Use logout to clear local data.',
+    info: 'Info',
+    deleteAllDataDescription: 'Permanently remove all messages and keys',
+    
+    // Time options
+    seconds: 'seconds',
+    minutes: 'minutes',
+    hours: 'hours',
+    days: 'days',
+    
+    // Messages
+    profileSaved: 'Profile saved successfully!',
+    profileSaveError: 'Failed to save profile. Please try again.',
+    usernameEmpty: 'Username cannot be empty',
+    usernameExists: 'Username already taken',
+    
+    // Delete confirmation
+    deleteConfirmTitle: 'Delete All Data',
+    deleteConfirmDescription: 'This action cannot be undone. All your chats, messages, encryption keys, and settings will be permanently removed from this device.',
+    cancel: 'Cancel',
+    deleteEverything: 'Delete Everything',
+    
+    // Encryption
+    encryptionEnabled: 'End-to-end encryption enabled',
+    securityFingerprint: 'Security fingerprint verification',
+    exportKeys: 'Export Encryption Keys',
+    exportKeysDesc: 'Backup your encryption keys securely',
+    verifySecurityNumber: 'Verify Security Number',
+    verifySecurityNumberDesc: 'Confirm end-to-end encryption status',
+    privacyPolicy: 'Privacy Policy',
+    sourceCode: 'Source Code',
+    securityAudit: 'Security Audit',
+    
+    // Chat specific additions
+    connected: 'Connected',
+    disconnected: 'Disconnected',
+    realTimeChat: 'Real-time chat',
+    welcomeToWhispergram: 'Welcome to Whispergram',
+    selectChatToStart: 'Select a chat to start secure messaging',
+    profileSettings: 'Profile Settings',
+    changeUsername: 'Change Username',
+    newUsername: 'New Username',
+    saveChanges: 'Save Changes',
+    error: 'Error',
+    success: 'Success',
+    usernameUpdated: 'Username updated successfully',
+    usernameTaken: 'Username is already taken',
+    
+    // Welcome page additions
+    loginSuccess: 'Successfully logged in',
+    loginFailed: 'Invalid username or password',
+    passwordRequired: 'Password required',
+    enterPassword: 'Please enter a password',
+    passwordTooShort: 'Password too short',
+    passwordMinLength: 'Password must be at least 6 characters long',
+    accountCreated: 'Your secure identity has been created',
+    registrationFailed: 'Registration Failed',
+    accountCreationFailed: 'Failed to create account',
+    noPhoneRequired: 'No phone or email required',
+    selfDestructing: 'Self-destructing messages',
+    zeroDataRetention: 'Zero data retention',
+    chooseIdentity: 'Choose Your Identity',
+    enterCredentials: 'Enter your existing username and password',
+    features: 'Features',
+    
+    // Chat error messages
+    notConnected: 'Not connected! Please wait for connection to be established.',
+    selectChatFirst: 'Please select a chat and ensure you\'re connected before uploading files.',
+    fileTooLarge: 'File too large! Maximum size is 10MB.',
+    failedToReadFile: 'Failed to read image file',
+    selectChatPhoto: 'Please select a chat and ensure you\'re connected before taking photos.',
+    
+    // Settings descriptions
+    anonymousIdentifier: 'Your anonymous identifier',
+    requireAuth: 'Require authentication to access',
+    disableKeyboard: 'Disable keyboard learning and suggestions',
+    
+    // Feature titles
+    endToEndEncryption: 'End-to-End Encryption',
+    anonymousAccess: 'Anonymous Access',
+    
+    // Chat management
+    deleteChatTitle: 'Delete Chat',
+    deleteChatDescription: 'Are you sure you want to delete this chat with {username}? This action cannot be undone and will only remove the chat from your side.',
+    chatDeleted: 'Chat deleted successfully',
+    chatDeleteError: 'Failed to delete chat',
 
-    profileSaved: "Profile saved successfully!",
-    profileSaveError: "Failed to save profile. Please try again.",
-    usernameEmpty: "Username cannot be empty",
-    usernameExists: "Username already taken",
-    usernameTaken: "Username is already taken",
-    usernameUpdated: "Username updated successfully",
+    blockUserTitle: 'Block User',
+    blockUserDescription: 'Are you sure you want to block {username}? They will no longer be able to send you messages.',
+    userBlocked: 'User {username} has been blocked',
+    userBlockError: 'Failed to block user',
+    unblockUser: 'Unblock User',
+    userUnblocked: 'User {username} has been unblocked',
+    deleting: 'Deleting...',
+    blocking: 'Blocking...',
+    zeroStorage: 'Zero Storage',
+    
+    // Imprint and Legal
+    imprint: "Imprint",
+    frequentlyAskedQuestions: "Frequently Asked Questions",
+    operatorInfo: "Operator Information",
+    secureMessaging: "Secure Anonymous Messaging Service",
+    anonymousService: "No registration required",
+    contact: "Contact",
+    contactInfo: "General inquiries",
+    technicalSupport: "Technical support",
+    dataProtection: "Data Protection",
+    dataProtectionInfo: "We process no personal data. All messages are encrypted end-to-end and automatically deleted. No logs, no tracking, no data retention.",
+    legalNotice: "Legal Notice", 
+    legalNoticeText: "This service is provided as-is. Users are responsible for complying with local laws. We do not monitor or store message content.",
+    encryptionInfo: "All messages use RSA-2048 end-to-end encryption. Private keys are generated locally and never transmitted to our servers.",
+    serverInfo: "Server Information",
+    howItWorks: "How It Works",
+    serverExplanation: "Whispergram uses a minimal server architecture designed for maximum privacy:",
+    serverPoint1: "WebSocket connections for real-time messaging without data persistence",
+    serverPoint2: "Temporary message routing - messages are deleted immediately after delivery",
+    serverPoint3: "No user databases - only temporary session management",
+    serverPoint4: "Automatic cleanup removes all traces of conversations",
+    infrastructure: "Infrastructure",
+    infrastructureInfo: "Our servers run on secure infrastructure with automated message deletion, zero-knowledge architecture, and no logging policies.",
+    securityInfo: "End-to-end encryption ensures only you and your contact can read messages. Our servers cannot decrypt your communications.",
+    back: "Back",
 
-    tokenMissing: "Token missing — please log in again.",
+    // FAQ
+    faq1Question: "How does end-to-end encryption work?",
+    faq1Answer: "Every user generates a unique RSA-2048 key pair locally. Messages are encrypted with the recipient's public key and can only be decrypted with their private key, which never leaves their device.",
+    faq2Question: "Are my messages stored on servers?",
+    faq2Answer: "No. Messages are transmitted through our servers but are immediately deleted after delivery. We use temporary memory storage with automatic cleanup every 10 seconds.",
+    faq3Question: "Can I recover deleted messages?",
+    faq3Answer: "No. Self-destructing messages are permanently deleted and cannot be recovered. This is by design to ensure maximum privacy.",
+    faq4Question: "Do I need to provide personal information?",
+    faq4Answer: "No personal information required. You can use generated usernames or create your own. No email, phone number, or real name needed.",
+    faq5Question: "How long do messages last?",
+    faq5Answer: "Messages have a configurable expiration timer (default 24 hours). They are automatically deleted from all devices when the timer expires.",
+    faq6Question: "Can I send files and images?",
+    faq6Answer: "Yes. Images are converted to Base64 and encrypted. Other files are uploaded securely with a 10MB size limit. All files are automatically deleted with messages.",
+    faq7Question: "Is the service really anonymous?",
+    faq7Answer: "Yes. We don't collect IP addresses, don't require registration, and don't store any user data. Your identity remains completely private.",
+    faq8Question: "What happens if I lose my private key?",
+    faq8Answer: "If you lose your private key, you cannot decrypt old messages. This is the tradeoff for maximum security - we cannot help recover lost keys.",
+    faq9Question: "Can the service be used for illegal activities?",
+    faq9Answer: "Users are responsible for complying with local laws. While we provide privacy tools, we do not endorse illegal activities.",
+    faq10Question: "Is the source code available?",
+    faq10Answer: "Yes. Whispergram is open source and can be audited for security. The code is available for review and self-hosting.",
 
-    // Account deletion
-    deleteAccount: "Delete Account",
-    deleteAccountTitle: "Delete Account",
-    deleteAccountDescription: "Permanently delete your account and all data",
-    deleteAccountConfirm:
-      "Are you sure you want to permanently delete your account?\n\nThis will delete:\n- your user\n- all chats\n- all messages\n\nYour username will be available again.",
-    deleteAccountForever: "Delete Forever",
-    accountDeleted: "Account successfully deleted",
-    accountDeletedDesc: "Your profile and all content have been deleted.",
-    accountDeleteError: "Failed to delete account",
+    // Security notice translations
+    messagesNotStored: "Your messages are never stored on our servers",
+    openSourceAudited: "Open source • Audited • Transparent",
+    
+    // Additional chat translations
+    now: 'now',
+    chatCreateError: 'Error creating chat. Please try again.',
+    connectionError: 'Connection error. Please try again.',
+    startEncryptedChat: 'Start encrypted chat',
+    noUsersFound: 'No users found',
+    enterUsernameToSearch: 'Enter a username to search',
+    deleteAccount: 'Delete Account',
+    deleteAccountDescription: 'Permanently delete your account and all data',
+    deleteAccountTitle: 'Delete Account',
+    deleteAccountConfirm: 'Are you sure you want to permanently delete your account? This action cannot be undone and will remove all your chats, messages, and settings.',
+    deleteAccountForever: 'Delete Forever',
+    accountDeleted: 'Account successfully deleted',
+    accountDeleteError: 'Failed to delete account',
   },
-
+  
   de: {
-    // Common
-    error: "Fehler",
-    success: "Erfolg",
-    saving: "Speichern...",
-    deleting: "Wird gelöscht...",
-    blocking: "Wird blockiert...",
+    // Welcome Page
+    welcome: 'Willkommen bei Velumchat',
+    welcomeDescription: 'Sichere, anonyme Nachrichten mit Ende-zu-Ende-Verschlüsselung',
+    createAccount: 'Konto erstellen',
+    login: 'Anmelden',
+    username: 'Benutzername',
+    password: 'Passwort',
+    chooseUsername: 'Wählen Sie Ihren Benutzernamen',
+    chooseUsernameHint: 'Wählen Sie einen beliebigen Benutzernamen (mindestens 3 Zeichen)',
+    usernameRequired: 'Benutzername erforderlich',
+    enterUsername: 'Bitte geben Sie einen Benutzernamen ein',
+    usernameTooShort: 'Benutzername zu kurz',
+    usernameMinLength: 'Benutzername muss mindestens 3 Zeichen lang sein',
+    
+    // Chat
+    searchUsers: 'Benutzer suchen...',
+    searchChats: 'Chats durchsuchen...',
+    startChat: 'Chat starten',
+    typeMessage: 'Nachricht eingeben...',
+    sendMessage: 'Senden',
+    online: 'Online',
+    offline: 'Offline',
+    connecting: 'Verbindung...',
+    settings: 'Einstellungen',
+    newChat: 'Neuer Chat',
+    noChats: 'Noch keine Chats',
+    noChatDescription: 'Suchen Sie nach Benutzern um verschlüsselte Chats zu starten',
+    encryptedChat: 'Verschlüsselter Chat',
+    loadingChats: 'Lade Chats...',
+    deleteChat: 'Chat löschen',
+    blockUser: '{username} blockieren',
+    copyInviteLink: 'Einladungslink kopieren',
+    chatStatistics: 'Chat-Statistiken',
+    clearChat: 'Chat leeren',
+    autoDestruct: 'Selbstzerstörung',
+    chatWith: 'Chat mit {username}',
+    chatStatsText: 'Chat-Statistiken:\n- Nachrichten insgesamt: {messages}\n- Partner: {partner}\n- Verschlüsselung: Aktiv',
+    clearChatConfirm: 'Sind Sie sicher, dass Sie diesen Chat mit {username} leeren möchten?',
+    clearChatImplemented: 'Chat-Leerung würde hier implementiert',
+    
+    // Settings
+    settingsTitle: 'Einstellungen',
+    profile: 'Profil',
+    saveProfile: 'Profil speichern',
+    security: 'Sicherheit',
+    privacy: 'Privatsphäre',
+    usernameLabel: 'Benutzername',
+    usernameDescription: 'Geben Sie einfach einen neuen Namen ein und klicken Sie auf "Profil speichern". Ihr Benutzername ist Ihre anonyme Identität.',
+    enterNewUsername: 'Geben Sie Ihren neuen Benutzernamen ein',
+    about: 'Über',
+    defaultTimer: 'Standard-Nachrichten-Timer',
+    screenLock: 'Bildschirmsperre',
+    incognitoKeyboard: 'Inkognito-Tastatur',
+    readReceipts: 'Lesebestätigungen',
+    typingIndicators: 'Tipp-Indikatoren',
+    autoDestructTime: 'Automatische Selbstzerstörungszeit für neue Nachrichten',
+    typingIndicatorsDesc: 'Zeigen Sie anderen an, wann Sie tippen',
+    readReceiptsDesc: 'Andere wissen lassen, wann Sie ihre Nachrichten gelesen haben',
+    screenLockDesc: 'Authentifizierung für App-Zugriff erforderlich',
+    incognitoKeyboardDesc: 'Tastaturlernen und Vorschläge deaktivieren',
+    language: 'Sprache',
+    deleteAllData: 'Alle Daten löschen',
+    permanentAccount: 'Permanenter Account',
+    permanentAccountDescription: 'Benutzernamen sind wie bei Wickr Me permanent. Benutze Logout für lokale Daten.',
+    info: 'Info',
+    deleteAllDataDescription: 'Alle Nachrichten und Schlüssel dauerhaft entfernen',
+    
+    // Additional Chat translations
+    
+    // Time options
+    seconds: 'Sekunden',
+    minutes: 'Minuten',
+    hours: 'Stunden',
+    days: 'Tage',
+    
+    // Messages
+    profileSaved: 'Profil erfolgreich gespeichert!',
+    profileSaveError: 'Profil konnte nicht gespeichert werden. Bitte versuchen Sie es erneut.',
+    usernameEmpty: 'Benutzername darf nicht leer sein',
+    usernameExists: 'Benutzername bereits vergeben',
+    
+    // Delete confirmation
+    deleteConfirmTitle: 'Alle Daten löschen',
+    deleteConfirmDescription: 'Diese Aktion kann nicht rückgängig gemacht werden. Alle Ihre Chats, Nachrichten, Verschlüsselungsschlüssel und Einstellungen werden dauerhaft von diesem Gerät entfernt.',
+    cancel: 'Abbrechen',
+    deleteEverything: 'Alles löschen',
+    
+    // Encryption
+    encryptionEnabled: 'Ende-zu-Ende-Verschlüsselung aktiviert',
+    securityFingerprint: 'Sicherheits-Fingerprint-Verifikation',
+    exportKeys: 'Verschlüsselungsschlüssel exportieren',
+    exportKeysDesc: 'Sichern Sie Ihre Verschlüsselungsschlüssel sicher',
+    verifySecurityNumber: 'Sicherheitsnummer verifizieren',
+    verifySecurityNumberDesc: 'Ende-zu-Ende-Verschlüsselungsstatus bestätigen',
+    privacyPolicy: 'Datenschutzrichtlinie',
+    sourceCode: 'Quellcode',
+    securityAudit: 'Sicherheitsprüfung',
+    
+    // Chat specific additions
+    connected: 'Verbunden',
+    disconnected: 'Getrennt',
+    realTimeChat: 'Echtzeit-Chat',
+    welcomeToWhispergram: 'Willkommen bei Whispergram',
+    selectChatToStart: 'Wähle einen Chat für sichere Nachrichten',
+    profileSettings: 'Profil-Einstellungen',
+    changeUsername: 'Benutzername ändern',
+    newUsername: 'Neuer Benutzername',
+    saveChanges: 'Änderungen speichern',
+    error: 'Fehler',
+    success: 'Erfolg',
+    usernameUpdated: 'Benutzername erfolgreich aktualisiert',
+    now: 'jetzt',
+    chatCreateError: 'Fehler beim Erstellen des Chats. Bitte versuchen Sie es erneut.',
+    connectionError: 'Verbindungsfehler. Bitte versuchen Sie es erneut.',
+    startEncryptedChat: 'Verschlüsselten Chat starten',
+    noUsersFound: 'Keine Benutzer gefunden',
+    enterUsernameToSearch: 'Geben Sie einen Benutzernamen ein',
+    deleteAccount: 'Account löschen',
+    deleteAccountDescription: 'Account und alle Daten permanent löschen',
+    deleteAccountTitle: 'Account löschen',
+    deleteAccountConfirm: 'Sind Sie sicher, dass Sie Ihren Account permanent löschen möchten? Diese Aktion kann nicht rückgängig gemacht werden und entfernt alle Ihre Chats, Nachrichten und Einstellungen.',
+    deleteAccountForever: 'Endgültig löschen',
+    accountDeleted: 'Account erfolgreich gelöscht',
+    accountDeleteError: 'Fehler beim Löschen des Accounts',
+    usernameTaken: 'Benutzername bereits vergeben',
+    
+    // Welcome page additions
+    welcomeBack: 'Willkommen zurück!',
+    loginSuccess: 'Erfolgreich angemeldet',
+    loginFailed: 'Ungültiger Benutzername oder Passwort',
+    passwordRequired: 'Passwort erforderlich',
+    enterPassword: 'Bitte geben Sie ein Passwort ein',
+    passwordTooShort: 'Passwort zu kurz',
+    passwordMinLength: 'Passwort muss mindestens 6 Zeichen lang sein',
+    accountCreated: 'Ihre sichere Identität wurde erstellt',
+    registrationFailed: 'Registrierung fehlgeschlagen',
+    accountCreationFailed: 'Konto konnte nicht erstellt werden',
+    chooseIdentity: 'Wählen Sie Ihre Identität',
+    enterCredentials: 'Geben Sie Ihren vorhandenen Benutzernamen und Ihr Passwort ein',
+    features: 'Funktionen',
+    
+    // Chat error messages
+    notConnected: 'Nicht verbunden! Bitte warten Sie, bis die Verbindung hergestellt ist.',
+    selectChatFirst: 'Bitte wählen Sie einen Chat und stellen Sie sicher, dass Sie verbunden sind, bevor Sie Dateien hochladen.',
+    fileTooLarge: 'Datei zu groß! Maximale Größe ist 10MB.',
+    failedToReadFile: 'Fehler beim Lesen der Bilddatei',
+    selectChatPhoto: 'Bitte wählen Sie einen Chat und stellen Sie sicher, dass Sie verbunden sind, bevor Sie Fotos aufnehmen.',
+    
+    // Settings descriptions
+    anonymousIdentifier: 'Ihre anonyme Kennung',
+    requireAuth: 'Authentifizierung für Zugriff erforderlich',
+    disableKeyboard: 'Tastaturlernen und Vorschläge deaktivieren',
+    
+    // Feature titles
+    endToEndEncryption: 'Ende-zu-Ende-Verschlüsselung',
+    anonymousAccess: 'Anonymer Zugang',
+    zeroStorage: 'Keine Speicherung',
+    
+    // Chat management
+    deleteChatTitle: 'Chat löschen',
+    deleteChatDescription: 'Sind Sie sicher, dass Sie diesen Chat mit {username} löschen möchten? Diese Aktion kann nicht rückgängig gemacht werden und entfernt den Chat nur von Ihrer Seite.',
+    chatDeleted: 'Chat erfolgreich gelöscht',
+    chatDeleteError: 'Fehler beim Löschen des Chats',
 
-    // Welcome / Auth
-    welcome: "Willkommen bei Velumchat",
-    welcomeDescription: "Sichere, anonyme Nachrichten mit Ende-zu-Ende-Verschlüsselung",
-    createAccount: "Konto erstellen",
-    login: "Anmelden",
-    username: "Benutzername",
-    password: "Passwort",
-    chooseUsername: "Wählen Sie Ihren Benutzernamen",
-    chooseUsernameHint: "Wählen Sie einen beliebigen Benutzernamen (mindestens 3 Zeichen)",
-    usernameRequired: "Benutzername erforderlich",
-    enterUsername: "Bitte geben Sie einen Benutzernamen ein",
-    usernameTooShort: "Benutzername zu kurz",
-    usernameMinLength: "Benutzername muss mindestens 3 Zeichen lang sein",
+    blockUserTitle: 'Benutzer blockieren',
+    blockUserDescription: 'Sind Sie sicher, dass Sie {username} blockieren möchten? Sie können Ihnen dann keine Nachrichten mehr senden.',
+    userBlocked: 'Benutzer {username} wurde blockiert',
+    userBlockError: 'Fehler beim Blockieren des Benutzers',
+    unblockUser: 'Benutzer entsperren',
+    userUnblocked: 'Benutzer {username} wurde entsperrt',
+    deleting: 'Wird gelöscht...',
+    blocking: 'Wird blockiert...',
+    
+    // Imprint and Legal - German
+    imprint: "Impressum",
+    frequentlyAskedQuestions: "Häufig gestellte Fragen",
+    operatorInfo: "Betreiberinformationen",
+    secureMessaging: "Sichere anonyme Nachrichten-Service",
+    anonymousService: "Keine Registrierung erforderlich",
+    contact: "Kontakt",
+    contactInfo: "Allgemeine Anfragen",
+    technicalSupport: "Technischer Support",
+    dataProtection: "Datenschutz",
+    dataProtectionInfo: "Wir verarbeiten keine persönlichen Daten. Alle Nachrichten sind Ende-zu-Ende verschlüsselt und werden automatisch gelöscht. Keine Logs, kein Tracking, keine Datenspeicherung.",
+    legalNotice: "Rechtlicher Hinweis",
+    legalNoticeText: "Dieser Service wird wie besehen bereitgestellt. Nutzer sind für die Einhaltung örtlicher Gesetze verantwortlich. Wir überwachen oder speichern keine Nachrichteninhalte.",
+    encryptionInfo: "Alle Nachrichten verwenden RSA-2048 Ende-zu-Ende-Verschlüsselung. Private Schlüssel werden lokal generiert und niemals an unsere Server übertragen.",
+    serverInfo: "Server-Informationen",
+    howItWorks: "Wie es funktioniert",
+    serverExplanation: "Whispergram verwendet eine minimale Server-Architektur für maximale Privatsphäre:",
+    serverPoint1: "WebSocket-Verbindungen für Echtzeit-Nachrichten ohne Datenpersistierung",
+    serverPoint2: "Temporäre Nachrichtenweiterleitung - Nachrichten werden sofort nach Zustellung gelöscht",
+    serverPoint3: "Keine Nutzerdatenbanken - nur temporäres Session-Management",
+    serverPoint4: "Automatische Bereinigung entfernt alle Spuren von Unterhaltungen",
+    infrastructure: "Infrastruktur",
+    infrastructureInfo: "Unsere Server laufen auf sicherer Infrastruktur mit automatischer Nachrichtenlöschung, Zero-Knowledge-Architektur und No-Logging-Richtlinien.",
+    securityInfo: "Ende-zu-Ende-Verschlüsselung stellt sicher, dass nur Sie und Ihr Kontakt Nachrichten lesen können. Unsere Server können Ihre Kommunikation nicht entschlüsseln.",
+    back: "Zurück",
 
-    loginSuccess: "Erfolgreich angemeldet",
-    loginFailed: "Ungültiger Benutzername oder Passwort",
-    passwordRequired: "Passwort erforderlich",
-    enterPassword: "Bitte geben Sie ein Passwort ein",
-    passwordTooShort: "Passwort zu kurz",
-    passwordMinLength: "Passwort muss mindestens 6 Zeichen lang sein",
-    accountCreated: "Ihre sichere Identität wurde erstellt",
-    registrationFailed: "Registrierung fehlgeschlagen",
-    accountCreationFailed: "Konto konnte nicht erstellt werden",
+    // FAQ - German
+    faq1Question: "Wie funktioniert Ende-zu-Ende-Verschlüsselung?",
+    faq1Answer: "Jeder Nutzer generiert lokal ein einzigartiges RSA-2048-Schlüsselpaar. Nachrichten werden mit dem öffentlichen Schlüssel des Empfängers verschlüsselt und können nur mit dessen privatem Schlüssel entschlüsselt werden, der das Gerät nie verlässt.",
+    faq2Question: "Werden meine Nachrichten auf Servern gespeichert?",
+    faq2Answer: "Nein. Nachrichten werden über unsere Server übertragen, aber sofort nach Zustellung gelöscht. Wir verwenden temporären Arbeitsspeicher mit automatischer Bereinigung alle 10 Sekunden.",
+    faq3Question: "Kann ich gelöschte Nachrichten wiederherstellen?",
+    faq3Answer: "Nein. Selbstzerstörende Nachrichten werden dauerhaft gelöscht und können nicht wiederhergestellt werden. Das ist beabsichtigt für maximale Privatsphäre.",
+    faq4Question: "Muss ich persönliche Informationen angeben?",
+    faq4Answer: "Keine persönlichen Informationen erforderlich. Sie können generierte Benutzernamen verwenden oder eigene erstellen. Keine E-Mail, Telefonnummer oder echter Name nötig.",
+    faq5Question: "Wie lange bleiben Nachrichten bestehen?",
+    faq5Answer: "Nachrichten haben einen konfigurierbaren Ablauf-Timer (Standard 24 Stunden). Sie werden automatisch von allen Geräten gelöscht, wenn der Timer abläuft.",
+    faq6Question: "Kann ich Dateien und Bilder senden?",
+    faq6Answer: "Ja. Bilder werden zu Base64 konvertiert und verschlüsselt. Andere Dateien werden sicher hochgeladen mit einem 10MB-Limit. Alle Dateien werden automatisch mit Nachrichten gelöscht.",
+    faq7Question: "Ist der Service wirklich anonym?",
+    faq7Answer: "Ja. Wir sammeln keine IP-Adressen, benötigen keine Registrierung und speichern keine Nutzerdaten. Ihre Identität bleibt vollständig privat.",
+    faq8Question: "Was passiert, wenn ich meinen privaten Schlüssel verliere?",
+    faq8Answer: "Wenn Sie Ihren privaten Schlüssel verlieren, können Sie alte Nachrichten nicht entschlüsseln. Das ist der Kompromiss für maximale Sicherheit - wir können nicht bei der Wiederherstellung verlorener Schlüssel helfen.",
+    faq9Question: "Kann der Service für illegale Aktivitäten genutzt werden?",
+    faq9Answer: "Nutzer sind für die Einhaltung örtlicher Gesetze verantwortlich. Während wir Privatsphäre-Tools bereitstellen, unterstützen wir keine illegalen Aktivitäten.",
+    faq10Question: "Ist der Quellcode verfügbar?",
+    faq10Answer: "Ja. Whispergram ist Open Source und kann auf Sicherheit geprüft werden. Der Code ist für Überprüfung und Selbst-Hosting verfügbar.",
+
+    // Security notice translations - German
+    messagesNotStored: "Ihre Nachrichten werden niemals auf unseren Servern gespeichert",
+    openSourceAudited: "Open Source • Geprüft • Transparent",
     noPhoneRequired: "Keine Telefonnummer oder E-Mail erforderlich",
     selfDestructing: "Selbstzerstörende Nachrichten",
     zeroDataRetention: "Keine Datenspeicherung",
-    chooseIdentity: "Wählen Sie Ihre Identität",
-    enterCredentials: "Geben Sie Ihren vorhandenen Benutzernamen und Ihr Passwort ein",
-    features: "Funktionen",
-
-    // Chat
-    searchUsers: "Benutzer suchen...",
-    searchChats: "Chats durchsuchen...",
-    startChat: "Chat starten",
-    typeMessage: "Nachricht eingeben...",
-    sendMessage: "Senden",
-    online: "Online",
-    offline: "Offline",
-    connecting: "Verbindung...",
-    connected: "Verbunden",
-    disconnected: "Getrennt",
-    realTimeChat: "Echtzeit-Chat",
-    encryptedChat: "Verschlüsselter Chat",
-    loadingChats: "Lade Chats...",
-    noChats: "Noch keine Chats",
-    noChatDescription: "Suchen Sie nach Benutzern um verschlüsselte Chats zu starten",
-    selectChatToStart: "Wähle einen Chat für sichere Nachrichten",
-    welcomeToWhispergram: "Willkommen bei Whispergram",
-
-    notConnected: "Nicht verbunden! Bitte warten Sie, bis die Verbindung hergestellt ist.",
-    selectChatFirst: "Bitte wählen Sie einen Chat und stellen Sie sicher, dass Sie verbunden sind, bevor Sie Dateien hochladen.",
-    fileTooLarge: "Datei zu groß! Maximale Größe ist 10MB.",
-    failedToReadFile: "Fehler beim Lesen der Bilddatei",
-    selectChatPhoto: "Bitte wählen Sie einen Chat und stellen Sie sicher, dass Sie verbunden sind, bevor Sie Fotos aufnehmen.",
-
-    now: "jetzt",
-
-    // Settings
-    settingsTitle: "Einstellungen",
-    profile: "Profil",
-    saveProfile: "Profil speichern",
-    usernameLabel: "Benutzername",
-    usernameDescription:
-      'Geben Sie einfach einen neuen Namen ein und klicken Sie auf "Profil speichern". Ihr Benutzername ist Ihre anonyme Identität.',
-    enterNewUsername: "Geben Sie Ihren neuen Benutzernamen ein",
-    language: "Sprache",
-    about: "Über",
-    aboutText: "VelumChat – Ende-zu-Ende verschlüsselte Nachrichten.",
-
-    profileSaved: "Profil erfolgreich gespeichert!",
-    profileSaveError: "Profil konnte nicht gespeichert werden. Bitte versuchen Sie es erneut.",
-    usernameEmpty: "Benutzername darf nicht leer sein",
-    usernameExists: "Benutzername bereits vergeben",
-    usernameTaken: "Benutzername bereits vergeben",
-    usernameUpdated: "Username wurde aktualisiert.",
-
-    tokenMissing: "Token fehlt – bitte neu einloggen.",
-
-    // Account deletion
-    deleteAccount: "Account löschen",
-    deleteAccountTitle: "Account löschen",
-    deleteAccountDescription: "Account und alle Daten permanent löschen",
-    deleteAccountConfirm:
-      "Willst du dein Profil wirklich löschen?\n\nDas löscht:\n- deinen User\n- alle Chats\n- alle Nachrichten\n\nDein Username wird danach wieder frei.",
-    deleteAccountForever: "Endgültig löschen",
-    accountDeleted: "Account erfolgreich gelöscht",
-    accountDeletedDesc: "Dein Profil und alle Inhalte wurden gelöscht.",
-    accountDeleteError: "Fehler beim Löschen des Accounts",
   },
-
+  
   ru: {
-    // Common
-    error: "Ошибка",
-    success: "Успех",
-    saving: "Сохранение...",
-    deleting: "Удаление...",
-    blocking: "Блокировка...",
-
-    // Welcome / Auth
-    welcome: "Добро пожаловать в Velumchat",
-    welcomeDescription: "Безопасные анонимные сообщения со сквозным шифрованием",
-    createAccount: "Создать аккаунт",
-    login: "Войти",
-    username: "Имя пользователя",
-    password: "Пароль",
-    chooseUsername: "Выберите имя пользователя",
-    chooseUsernameHint: "Выберите любое имя (минимум 3 символа)",
-    usernameRequired: "Требуется имя пользователя",
-    enterUsername: "Пожалуйста, введите имя пользователя",
-    usernameTooShort: "Имя пользователя слишком короткое",
-    usernameMinLength: "Имя пользователя должно быть минимум 3 символа",
-
-    loginSuccess: "Вход выполнен успешно",
-    loginFailed: "Неверное имя пользователя или пароль",
-    passwordRequired: "Требуется пароль",
-    enterPassword: "Введите пароль",
-    passwordTooShort: "Пароль слишком короткий",
-    passwordMinLength: "Пароль должен быть не менее 6 символов",
-    accountCreated: "Ваша безопасная личность создана",
-    registrationFailed: "Регистрация не удалась",
-    accountCreationFailed: "Не удалось создать аккаунт",
-    noPhoneRequired: "Телефон или email не требуется",
-    selfDestructing: "Самоуничтожающиеся сообщения",
-    zeroDataRetention: "Нулевое хранение данных",
-    chooseIdentity: "Выберите свою личность",
-    enterCredentials: "Введите существующее имя пользователя и пароль",
-    features: "Возможности",
-
+    // Welcome Page
+    welcome: 'Добро пожаловать в Velumchat',
+    welcomeDescription: 'Безопасные анонимные сообщения с шифрованием точка-точка',
+    createAccount: 'Создать аккаунт',
+    login: 'Войти',
+    username: 'Имя пользователя',
+    password: 'Пароль',
+    generateUsername: 'Генерировать случайное имя',
+    chooseUsername: 'Выберите имя пользователя',
+    chooseUsernameHint: 'Выберите любое имя пользователя (минимум 3 символа)',
+    enterCredentials: 'Введите существующее имя пользователя и пароль',
+    
     // Chat
-    searchUsers: "Поиск пользователей...",
-    searchChats: "Поиск чатов...",
-    startChat: "Начать чат",
-    typeMessage: "Введите сообщение...",
-    sendMessage: "Отправить",
-    online: "В сети",
-    offline: "Не в сети",
-    connecting: "Подключение...",
-    connected: "Подключено",
-    disconnected: "Отключено",
-    realTimeChat: "Чат в реальном времени",
-    encryptedChat: "Зашифрованный чат",
-    loadingChats: "Загрузка чатов...",
-    noChats: "Пока нет чатов",
-    noChatDescription: "Найдите пользователей для зашифрованных чатов",
-    selectChatToStart: "Выберите чат для безопасного общения",
-    welcomeToWhispergram: "Добро пожаловать в Whispergram",
-
-    notConnected: "Нет соединения! Подождите, пока соединение установится.",
-    selectChatFirst: "Выберите чат и убедитесь, что вы подключены, прежде чем загружать файлы.",
-    fileTooLarge: "Файл слишком большой! Максимум 10MB.",
-    failedToReadFile: "Не удалось прочитать файл изображения",
-    selectChatPhoto: "Выберите чат и убедитесь, что вы подключены, прежде чем делать фото.",
-
-    now: "сейчас",
-
+    searchUsers: 'Поиск пользователей...',
+    searchChats: 'Поиск чатов...',
+    startChat: 'Начать чат',
+    typeMessage: 'Введите сообщение...',
+    sendMessage: 'Отправить',
+    online: 'В сети',
+    offline: 'Не в сети',
+    connecting: 'Подключение...',
+    settings: 'Настройки',
+    newChat: 'Новый чат',
+    noChats: 'Пока нет чатов',
+    noChatDescription: 'Найдите пользователей для зашифрованных чатов',
+    encryptedChat: 'Зашифрованный чат',
+    loadingChats: 'Загрузка чатов...',
+    deleteChat: 'Удалить чат',
+    blockUser: 'Заблокировать {username}',
+    copyInviteLink: 'Копировать ссылку-приглашение',
+    chatStatistics: 'Статистика чата',
+    clearChat: 'Очистить чат',
+    autoDestruct: 'Самоуничтожение',
+    chatWith: 'Чат с {username}',
+    chatStatsText: 'Статистика чата:\n- Всего сообщений: {messages}\n- Партнёр: {partner}\n- Шифрование: Активно',
+    clearChatConfirm: 'Вы уверены, что хотите очистить этот чат с {username}?',
+    clearChatImplemented: 'Очистка чата будет реализована здесь',
+    
     // Settings
-    settingsTitle: "Настройки",
-    profile: "Профиль",
-    saveProfile: "Сохранить профиль",
-    usernameLabel: "Имя пользователя",
-    usernameDescription:
-      'Введите новое имя и нажмите "Сохранить профиль". Имя пользователя — ваша анонимная личность.',
-    enterNewUsername: "Введите новое имя пользователя",
-    language: "Язык",
-    about: "О программе",
-    aboutText: "VelumChat — обмен сообщениями со сквозным шифрованием.",
+    settingsTitle: 'Настройки',
+    profile: 'Профиль',
+    saveProfile: 'Сохранить профиль',
+    security: 'Безопасность',
+    privacy: 'Конфиденциальность',
+    usernameLabel: 'Имя пользователя',
+    usernameDescription: 'Просто введите новое имя и нажмите "Сохранить профиль". Ваше имя пользователя - это ваша анонимная личность.',
+    enterNewUsername: 'Введите новое имя пользователя',
+    about: 'О программе',
+    defaultTimer: 'Стандартный таймер сообщений',
+    screenLock: 'Блокировка экрана',
+    incognitoKeyboard: 'Инкогнито клавиатура',
+    readReceipts: 'Уведомления о прочтении',
+    typingIndicators: 'Индикаторы набора',
+    autoDestructTime: 'Время автоуничтожения для новых сообщений',
+    typingIndicatorsDesc: 'Показывать другим, когда вы печатаете',
+    readReceiptsDesc: 'Сообщать другим, когда вы прочитали их сообщения',
+    screenLockDesc: 'Требовать аутентификацию для доступа к приложению',
+    incognitoKeyboardDesc: 'Отключить обучение клавиатуры и предложения',
+    language: 'Язык',
+    deleteAllData: 'Удалить все данные',
+    permanentAccount: 'Постоянный аккаунт',
+    permanentAccountDescription: 'Имена пользователей постоянны как в Wickr Me. Используйте выход для очистки локальных данных.',
+    info: 'Информация',
+    deleteAllDataDescription: 'Навсегда удалить все сообщения и ключи',
+    
+    // Time options
+    seconds: 'секунд',
+    minutes: 'минут',
+    hours: 'часов',
+    days: 'дней',
+    
+    // Messages
+    profileSaved: 'Профиль успешно сохранен!',
+    profileSaveError: 'Не удалось сохранить профиль. Попробуйте еще раз.',
+    usernameEmpty: 'Имя пользователя не может быть пустым',
+    usernameExists: 'Имя пользователя уже занято',
+    
+    // Delete confirmation
+    deleteConfirmTitle: 'Удалить все данные',
+    deleteConfirmDescription: 'Это действие нельзя отменить. Все ваши чаты, сообщения, ключи шифрования и настройки будут навсегда удалены с этого устройства.',
+    cancel: 'Отмена',
+    deleteEverything: 'Удалить все',
+    
+    // Encryption
+    encryptionEnabled: 'Шифрование точка-точка включено',
+    securityFingerprint: 'Проверка отпечатка безопасности',
+    exportKeys: 'Экспортировать ключи шифрования',
+    exportKeysDesc: 'Безопасно сделать резервную копию ваших ключей шифрования',
+    verifySecurityNumber: 'Проверить номер безопасности',
+    verifySecurityNumberDesc: 'Подтвердить статус сквозного шифрования',
+    privacyPolicy: 'Политика конфиденциальности',
+    sourceCode: 'Исходный код',
+    securityAudit: 'Аудит безопасности',
+    
+    // Chat specific additions
+    connected: 'Подключено',
+    disconnected: 'Отключено',
+    welcomeBack: 'Добро пожаловать!',
+    loginSuccess: 'Успешный вход в систему',
+    realTimeChat: 'Чат в реальном времени',
+    welcomeToWhispergram: 'Добро пожаловать в Whispergram',
+    selectChatToStart: 'Выберите чат для безопасного общения',
+    profileSettings: 'Настройки профиля',
+    changeUsername: 'Изменить имя пользователя',
+    newUsername: 'Новое имя пользователя',
+    saveChanges: 'Сохранить изменения',
+    error: 'Ошибка',
+    success: 'Успех',
+    usernameUpdated: 'Имя пользователя успешно обновлено',
+    now: 'сейчас',
+    chatCreateError: 'Ошибка создания чата. Попробуйте снова.',
+    connectionError: 'Ошибка соединения. Попробуйте снова.',
+    startEncryptedChat: 'Начать зашифрованный чат',
+    noUsersFound: 'Пользователи не найдены',
+    enterUsernameToSearch: 'Введите имя пользователя для поиска',
+    deleteAccount: 'Удалить аккаунт',
+    deleteAccountDescription: 'Навсегда удалить аккаунт и все данные',
+    deleteAccountTitle: 'Удалить аккаунт',
+    deleteAccountConfirm: 'Вы уверены, что хотите навсегда удалить свой аккаунт? Это действие нельзя отменить, и это удалит все ваши чаты, сообщения и настройки.',
+    deleteAccountForever: 'Удалить навсегда',
+    accountDeleted: 'Аккаунт успешно удален',
+    accountDeleteError: 'Не удалось удалить аккаунт',
+    usernameTaken: 'Имя пользователя уже занято',
+    
+    // Login credentials specific
+    loginFailed: 'Неверное имя пользователя или пароль',
+    passwordRequired: 'Требуется пароль',
+    enterPassword: 'Введите пароль',
+    passwordTooShort: 'Пароль слишком короткий',
+    passwordMinLength: 'Пароль должен содержать не менее 6 символов',
+    accountCreated: 'Ваша безопасная личность создана',
+    registrationFailed: 'Регистрация не удалась',
+    accountCreationFailed: 'Не удалось создать аккаунт',
+    noPhoneRequired: 'Телефон или email не требуется',
+    selfDestructing: 'Самоуничтожающиеся сообщения',
+    zeroDataRetention: 'Нулевое хранение данных',
+    chooseIdentity: 'Выберите свою личность',
+    or: 'или',
+    features: 'Возможности',
+    
+    // Settings descriptions
+    anonymousIdentifier: 'Ваш анонимный идентификатор',
+    requireAuth: 'Требовать аутентификацию для доступа',
+    disableKeyboard: 'Отключить изучение клавиатуры и предложения',
+    
+    // Feature titles
+    endToEndEncryption: 'Шифрование точка-точка',
+    anonymousAccess: 'Анонимный доступ',
+    zeroStorage: 'Нулевое хранение',
+    
+    // Imprint and Legal - Russian
+    imprint: "Выходные данные",
+    frequentlyAskedQuestions: "Часто задаваемые вопросы",
+    operatorInfo: "Информация об операторе",
+    secureMessaging: "Сервис безопасных анонимных сообщений",
+    anonymousService: "Регистрация не требуется",
+    contact: "Контакты",
+    contactInfo: "Общие вопросы",
+    technicalSupport: "Техническая поддержка",
+    dataProtection: "Защита данных",
+    dataProtectionInfo: "Мы не обрабатываем персональные данные. Все сообщения зашифрованы сквозным шифрованием и автоматически удаляются. Нет логов, нет отслеживания, нет хранения данных.",
+    legalNotice: "Правовое уведомление",
+    legalNoticeText: "Этот сервис предоставляется как есть. Пользователи несут ответственность за соблюдение местных законов. Мы не отслеживаем и не храним содержимое сообщений.",
+    encryptionInfo: "Все сообщения используют RSA-2048 сквозное шифрование. Приватные ключи генерируются локально и никогда не передаются на наши серверы.",
+    serverInfo: "Информация о сервере",
+    howItWorks: "Как это работает",
+    serverExplanation: "Whispergram использует минимальную серверную архитектуру для максимальной приватности:",
+    serverPoint1: "WebSocket соединения для сообщений в реальном времени без сохранения данных",
+    serverPoint2: "Временная маршрутизация сообщений - сообщения удаляются сразу после доставки",
+    serverPoint3: "Нет баз данных пользователей - только временное управление сессиями",
+    serverPoint4: "Автоматическая очистка удаляет все следы разговоров",
+    infrastructure: "Инфраструктура",
+    infrastructureInfo: "Наши серверы работают на безопасной инфраструктуре с автоматическим удалением сообщений, архитектурой нулевого знания и политикой отсутствия логирования.",
+    securityInfo: "Сквозное шифрование гарантирует, что только вы и ваш собеседник можете читать сообщения. Наши серверы не могут расшифровать вашу переписку.",
+    back: "Назад",
 
-    profileSaved: "Профиль успешно сохранён!",
-    profileSaveError: "Не удалось сохранить профиль. Попробуйте ещё раз.",
-    usernameEmpty: "Имя пользователя не может быть пустым",
-    usernameExists: "Имя пользователя уже занято",
-    usernameTaken: "Имя пользователя уже занято",
-    usernameUpdated: "Имя пользователя успешно обновлено",
+    // FAQ - Russian
+    faq1Question: "Как работает сквозное шифрование?",
+    faq1Answer: "Каждый пользователь генерирует уникальную пару ключей RSA-2048 локально. Сообщения шифруются открытым ключом получателя и могут быть расшифрованы только его приватным ключом, который никогда не покидает устройство.",
+    faq2Question: "Хранятся ли мои сообщения на серверах?",
+    faq2Answer: "Нет. Сообщения передаются через наши серверы, но сразу удаляются после доставки. Мы используем временную память с автоматической очисткой каждые 10 секунд.",
+    faq3Question: "Могу ли я восстановить удаленные сообщения?",
+    faq3Answer: "Нет. Самоуничтожающиеся сообщения удаляются навсегда и не могут быть восстановлены. Это сделано специально для максимальной приватности.",
+    faq4Question: "Нужно ли предоставлять личную информацию?",
+    faq4Answer: "Никакой личной информации не требуется. Вы можете использовать сгенерированные имена пользователей или создать свои. Не нужны email, номер телефона или настоящее имя.",
+    faq5Question: "Как долго хранятся сообщения?",
+    faq5Answer: "Сообщения имеют настраиваемый таймер истечения (по умолчанию 24 часа). Они автоматически удаляются со всех устройств по истечении времени.",
+    faq6Question: "Могу ли я отправлять файлы и изображения?",
+    faq6Answer: "Да. Изображения конвертируются в Base64 и шифруются. Другие файлы загружаются безопасно с лимитом 10МБ. Все файлы автоматически удаляются вместе с сообщениями.",
+    faq7Question: "Действительно ли сервис анонимен?",
+    faq7Answer: "Да. Мы не собираем IP-адреса, не требуем регистрации и не храним пользовательские данные. Ваша личность остается полностью приватной.",
+    faq8Question: "Что будет, если я потеряю приватный ключ?",
+    faq8Answer: "Если вы потеряете приватный ключ, вы не сможете расшифровать старые сообщения. Это компромисс для максимальной безопасности - мы не можем помочь восстановить потерянные ключи.",
+    faq9Question: "Можно ли использовать сервис для незаконной деятельности?",
+    faq9Answer: "Пользователи несут ответственность за соблюдение местных законов. Хотя мы предоставляем инструменты приватности, мы не поддерживаем незаконную деятельность.",
+    faq10Question: "Доступен ли исходный код?",
+    faq10Answer: "Да. Whispergram имеет открытый исходный код и может быть проверен на безопасность. Код доступен для изучения и самостоятельного хостинга.",
 
-    tokenMissing: "Отсутствует токен — пожалуйста, войдите снова.",
-
-    // Account deletion
-    deleteAccount: "Удалить аккаунт",
-    deleteAccountTitle: "Удалить аккаунт",
-    deleteAccountDescription: "Навсегда удалить аккаунт и все данные",
-    deleteAccountConfirm:
-      "Вы уверены, что хотите навсегда удалить аккаунт?\n\nЭто удалит:\n- ваш профиль\n- все чаты\n- все сообщения\n\nВаше имя пользователя снова станет доступным.",
-    deleteAccountForever: "Удалить навсегда",
-    accountDeleted: "Аккаунт успешно удалён",
-    accountDeletedDesc: "Ваш профиль и весь контент были удалены.",
-    accountDeleteError: "Не удалось удалить аккаунт",
+    // Security notice translations - Russian
+    messagesNotStored: "Ваши сообщения никогда не хранятся на наших серверах",
+    openSourceAudited: "Открытый код • Проверен • Прозрачный",
   },
-
+  
   fr: {
-    // Common
-    error: "Erreur",
-    success: "Succès",
-    saving: "Enregistrement...",
-    deleting: "Suppression...",
-    blocking: "Blocage...",
-
-    // Welcome / Auth
-    welcome: "Bienvenue sur Velumchat",
-    welcomeDescription: "Messagerie sécurisée et anonyme avec chiffrement de bout en bout",
-    createAccount: "Créer un compte",
-    login: "Se connecter",
-    username: "Nom d'utilisateur",
-    password: "Mot de passe",
-    chooseUsername: "Choisissez votre nom d'utilisateur",
-    chooseUsernameHint: "Choisissez n'importe quel nom (minimum 3 caractères)",
-    usernameRequired: "Nom d'utilisateur requis",
-    enterUsername: "Veuillez entrer un nom d'utilisateur",
-    usernameTooShort: "Nom d'utilisateur trop court",
-    usernameMinLength: "Le nom d'utilisateur doit contenir au moins 3 caractères",
-
-    loginSuccess: "Connexion réussie",
-    loginFailed: "Nom d'utilisateur ou mot de passe invalide",
-    passwordRequired: "Mot de passe requis",
-    enterPassword: "Veuillez entrer un mot de passe",
-    passwordTooShort: "Mot de passe trop court",
-    passwordMinLength: "Le mot de passe doit contenir au moins 6 caractères",
-    accountCreated: "Votre identité sécurisée a été créée",
-    registrationFailed: "Échec de l'inscription",
-    accountCreationFailed: "Impossible de créer le compte",
-    noPhoneRequired: "Aucun téléphone ou email requis",
-    selfDestructing: "Messages auto-destructeurs",
-    zeroDataRetention: "Zéro rétention de données",
-    chooseIdentity: "Choisissez votre identité",
-    enterCredentials: "Entrez votre nom d'utilisateur et mot de passe existants",
-    features: "Fonctionnalités",
-
+    // Welcome Page
+    welcome: 'Bienvenue sur Velumchat',
+    welcomeDescription: 'Messagerie sécurisée et anonyme avec chiffrement de bout en bout',
+    createAccount: 'Créer un compte',
+    login: 'Se connecter',
+    username: 'Nom d\'utilisateur',
+    password: 'Mot de passe',
+    generateUsername: 'Générer un nom aléatoire',
+    chooseUsername: 'Choisissez votre nom d\'utilisateur',
+    chooseUsernameHint: 'Choisissez n\'importe quel nom d\'utilisateur (minimum 3 caractères)',
+    enterCredentials: 'Entrez votre nom d\'utilisateur et mot de passe existants',
+    
     // Chat
-    searchUsers: "Rechercher des utilisateurs...",
-    searchChats: "Rechercher des conversations...",
-    startChat: "Démarrer une conversation",
-    typeMessage: "Tapez un message...",
-    sendMessage: "Envoyer",
-    online: "En ligne",
-    offline: "Hors ligne",
-    connecting: "Connexion...",
-    connected: "Connecté",
-    disconnected: "Déconnecté",
-    realTimeChat: "Chat en temps réel",
-    encryptedChat: "Chat chiffré",
-    loadingChats: "Chargement des chats...",
-    noChats: "Aucun chat",
-    noChatDescription: "Recherchez des utilisateurs pour démarrer des chats chiffrés",
-    selectChatToStart: "Sélectionnez un chat pour une messagerie sécurisée",
-    welcomeToWhispergram: "Bienvenue sur Whispergram",
-
-    notConnected: "Non connecté ! Veuillez attendre la connexion.",
-    selectChatFirst: "Sélectionnez un chat et assurez-vous d'être connecté avant d'envoyer des fichiers.",
-    fileTooLarge: "Fichier trop volumineux ! Maximum 10MB.",
-    failedToReadFile: "Impossible de lire l'image",
-    selectChatPhoto: "Sélectionnez un chat et assurez-vous d'être connecté avant de prendre des photos.",
-
-    now: "maintenant",
-
+    searchUsers: 'Rechercher des utilisateurs...',
+    startChat: 'Démarrer une conversation',
+    typeMessage: 'Tapez un message...',
+    sendMessage: 'Envoyer',
+    online: 'En ligne',
+    offline: 'Hors ligne',
+    settings: 'Paramètres',
+    
     // Settings
-    settingsTitle: "Paramètres",
-    profile: "Profil",
-    saveProfile: "Sauvegarder le profil",
-    usernameLabel: "Nom d'utilisateur",
-    usernameDescription:
-      'Entrez un nouveau nom puis cliquez sur "Sauvegarder le profil". Votre nom d’utilisateur est votre identité anonyme.',
-    enterNewUsername: "Entrez votre nouveau nom d'utilisateur",
-    language: "Langue",
-    about: "À propos",
-    aboutText: "VelumChat — messagerie chiffrée de bout en bout.",
-
-    profileSaved: "Profil sauvegardé avec succès !",
-    profileSaveError: "Impossible de sauvegarder le profil. Veuillez réessayer.",
-    usernameEmpty: "Le nom d'utilisateur ne peut pas être vide",
-    usernameExists: "Nom d'utilisateur déjà pris",
-    usernameTaken: "Le nom d'utilisateur est déjà pris",
-    usernameUpdated: "Nom d'utilisateur mis à jour avec succès",
-
-    tokenMissing: "Jeton manquant — veuillez vous reconnecter.",
-
-    // Account deletion
-    deleteAccount: "Supprimer le compte",
-    deleteAccountTitle: "Supprimer le compte",
-    deleteAccountDescription: "Supprimer définitivement votre compte et toutes les données",
-    deleteAccountConfirm:
-      "Êtes-vous sûr de vouloir supprimer définitivement votre compte ?\n\nCela supprimera :\n- votre profil\n- tous les chats\n- tous les messages\n\nVotre nom d'utilisateur redeviendra disponible.",
-    deleteAccountForever: "Supprimer définitivement",
-    accountDeleted: "Compte supprimé avec succès",
-    accountDeletedDesc: "Votre profil et tout le contenu ont été supprimés.",
-    accountDeleteError: "Échec de la suppression du compte",
+    settingsTitle: 'Paramètres',
+    profile: 'Profil',
+    saveProfile: 'Sauvegarder le profil',
+    security: 'Sécurité',
+    privacy: 'Confidentialité',
+    usernameLabel: 'Nom d\'utilisateur',
+    usernameDescription: 'Entrez simplement un nouveau nom et cliquez sur "Sauvegarder le profil". Votre nom d\'utilisateur est votre identité anonyme.',
+    enterNewUsername: 'Entrez votre nouveau nom d\'utilisateur',
+    about: 'À propos',
+    defaultTimer: 'Minuteur de message par défaut',
+    screenLock: 'Verrouillage d\'écran',
+    incognitoKeyboard: 'Clavier incognito',
+    readReceipts: 'Accusés de lecture',
+    typingIndicators: 'Indicateurs de frappe',
+    autoDestructTime: 'Temps d\'auto-destruction pour les nouveaux messages',
+    typingIndicatorsDesc: 'Montrer aux autres quand vous tapez',
+    readReceiptsDesc: 'Informer les autres quand vous avez lu leurs messages',
+    screenLockDesc: 'Exiger une authentification pour accéder à l\'application',
+    incognitoKeyboardDesc: 'Désactiver l\'apprentissage du clavier et les suggestions',
+    language: 'Langue',
+    deleteAllData: 'Supprimer toutes les données',
+    permanentAccount: 'Compte permanent',
+    permanentAccountDescription: 'Les noms d\'utilisateur sont permanents comme dans Wickr Me. Utilisez déconnexion pour effacer les données locales.',
+    info: 'Info',
+    deleteAllDataDescription: 'Supprimer définitivement tous les messages et clés',
+    
+    // Time options
+    seconds: 'secondes',
+    minutes: 'minutes',
+    hours: 'heures',
+    days: 'jours',
+    
+    // Messages
+    profileSaved: 'Profil sauvegardé avec succès !',
+    profileSaveError: 'Impossible de sauvegarder le profil. Veuillez réessayer.',
+    usernameEmpty: 'Le nom d\'utilisateur ne peut pas être vide',
+    usernameExists: 'Nom d\'utilisateur déjà pris',
+    
+    // Delete confirmation
+    deleteConfirmTitle: 'Supprimer toutes les données',
+    deleteConfirmDescription: 'Cette action ne peut pas être annulée. Tous vos chats, messages, clés de chiffrement et paramètres seront définitivement supprimés de cet appareil.',
+    cancel: 'Annuler',
+    deleteEverything: 'Tout supprimer',
+    
+    // Encryption
+    encryptionEnabled: 'Chiffrement de bout en bout activé',
+    securityFingerprint: 'Vérification d\'empreinte de sécurité',
+    exportKeys: 'Exporter les clés de chiffrement',
+    exportKeysDesc: 'Sauvegarder vos clés de chiffrement en sécurité',
+    verifySecurityNumber: 'Vérifier le numéro de sécurité',
+    verifySecurityNumberDesc: 'Confirmer le statut du chiffrement de bout en bout',
+    privacyPolicy: 'Politique de confidentialité',
+    sourceCode: 'Code source',
+    securityAudit: 'Audit de sécurité',
+    
+    // Chat specific additions
+    connected: 'Connecté',
+    disconnected: 'Déconnecté',
+    connecting: 'Connexion en cours...',
+    welcomeBack: 'Bon retour!',
+    loginSuccess: 'Connexion réussie',
+    realTimeChat: 'Chat en temps réel',
+    welcomeToWhispergram: 'Bienvenue sur Whispergram',
+    selectChatToStart: 'Sélectionnez un chat pour une messagerie sécurisée',
+    profileSettings: 'Paramètres du profil',
+    changeUsername: 'Changer le nom d\'utilisateur',
+    newUsername: 'Nouveau nom d\'utilisateur',
+    saveChanges: 'Sauvegarder les modifications',
+    error: 'Erreur',
+    success: 'Succès',
+    usernameUpdated: 'Nom d\'utilisateur mis à jour avec succès',
+    now: 'maintenant',
+    chatCreateError: 'Erreur lors de la création du chat. Veuillez réessayer.',
+    connectionError: 'Erreur de connexion. Veuillez réessayer.',
+    startEncryptedChat: 'Commencer un chat chiffré',
+    noUsersFound: 'Aucun utilisateur trouvé',
+    enterUsernameToSearch: 'Entrez un nom d\'utilisateur à rechercher',
+    deleteAccount: 'Supprimer le compte',
+    deleteAccountDescription: 'Supprimer définitivement votre compte et toutes les données',
+    deleteAccountTitle: 'Supprimer le compte',
+    deleteAccountConfirm: 'Êtes-vous sûr de vouloir supprimer définitivement votre compte ? Cette action ne peut pas être annulée et supprimera tous vos chats, messages et paramètres.',
+    deleteAccountForever: 'Supprimer définitivement',
+    accountDeleted: 'Compte supprimé avec succès',
+    accountDeleteError: 'Échec de la suppression du compte',
+    usernameTaken: 'Le nom d\'utilisateur est déjà pris',
   },
-
+  
   es: {
-    // Common
-    error: "Error",
-    success: "Éxito",
-    saving: "Guardando...",
-    deleting: "Eliminando...",
-    blocking: "Bloqueando...",
-
-    // Welcome / Auth
-    welcome: "Bienvenido a Velumchat",
-    welcomeDescription: "Mensajería segura y anónima con cifrado de extremo a extremo",
-    createAccount: "Crear cuenta",
-    login: "Iniciar sesión",
-    username: "Nombre de usuario",
-    password: "Contraseña",
-    chooseUsername: "Elige tu nombre de usuario",
-    chooseUsernameHint: "Elige cualquier nombre (mínimo 3 caracteres)",
-    usernameRequired: "Se requiere nombre de usuario",
-    enterUsername: "Por favor ingresa un nombre de usuario",
-    usernameTooShort: "Nombre de usuario demasiado corto",
-    usernameMinLength: "El nombre de usuario debe tener al menos 3 caracteres",
-
-    loginSuccess: "Inicio de sesión exitoso",
-    loginFailed: "Nombre de usuario o contraseña inválidos",
-    passwordRequired: "Contraseña requerida",
-    enterPassword: "Por favor ingresa una contraseña",
-    passwordTooShort: "Contraseña muy corta",
-    passwordMinLength: "La contraseña debe tener al menos 6 caracteres",
-    accountCreated: "Tu identidad segura ha sido creada",
-    registrationFailed: "Registro fallido",
-    accountCreationFailed: "No se pudo crear la cuenta",
-    noPhoneRequired: "No se requiere teléfono o email",
-    selfDestructing: "Mensajes auto-destructivos",
-    zeroDataRetention: "Cero retención de datos",
-    chooseIdentity: "Elige tu identidad",
-    enterCredentials: "Ingresa tu nombre de usuario y contraseña existentes",
-    features: "Características",
-
+    // Welcome Page
+    welcome: 'Bienvenido a Velumchat',
+    welcomeDescription: 'Mensajería segura y anónima con cifrado de extremo a extremo',
+    createAccount: 'Crear cuenta',
+    login: 'Iniciar sesión',
+    username: 'Nombre de usuario',
+    password: 'Contraseña',
+    generateUsername: 'Generar nombre aleatorio',
+    chooseUsername: 'Elige tu nombre de usuario',
+    chooseUsernameHint: 'Elige cualquier nombre de usuario (mínimo 3 caracteres)',
+    enterCredentials: 'Ingresa tu nombre de usuario y contraseña existentes',
+    
     // Chat
-    searchUsers: "Buscar usuarios...",
-    searchChats: "Buscar chats...",
-    startChat: "Iniciar chat",
-    typeMessage: "Escribe un mensaje...",
-    sendMessage: "Enviar",
-    online: "En línea",
-    offline: "Desconectado",
-    connecting: "Conectando...",
-    connected: "Conectado",
-    disconnected: "Desconectado",
-    realTimeChat: "Chat en tiempo real",
-    encryptedChat: "Chat encriptado",
-    loadingChats: "Cargando chats...",
-    noChats: "Aún no hay chats",
-    noChatDescription: "Busca usuarios para iniciar chats cifrados",
-    selectChatToStart: "Selecciona un chat para mensajería segura",
-    welcomeToWhispergram: "Bienvenido a Whispergram",
-
-    notConnected: "¡No conectado! Espera a que se establezca la conexión.",
-    selectChatFirst: "Selecciona un chat y asegúrate de estar conectado antes de subir archivos.",
-    fileTooLarge: "¡Archivo demasiado grande! Máximo 10MB.",
-    failedToReadFile: "No se pudo leer la imagen",
-    selectChatPhoto: "Selecciona un chat y asegúrate de estar conectado antes de tomar fotos.",
-
-    now: "ahora",
-
+    searchUsers: 'Buscar usuarios...',
+    startChat: 'Iniciar chat',
+    typeMessage: 'Escribe un mensaje...',
+    sendMessage: 'Enviar',
+    online: 'En línea',
+    offline: 'Desconectado',
+    settings: 'Configuración',
+    
     // Settings
-    settingsTitle: "Configuración",
-    profile: "Perfil",
-    saveProfile: "Guardar perfil",
-    usernameLabel: "Nombre de usuario",
-    usernameDescription:
-      'Ingresa un nuevo nombre y haz clic en "Guardar perfil". Tu nombre de usuario es tu identidad anónima.',
-    enterNewUsername: "Ingresa tu nuevo nombre de usuario",
-    language: "Idioma",
-    about: "Acerca de",
-    aboutText: "VelumChat — mensajería cifrada de extremo a extremo.",
-
-    profileSaved: "¡Perfil guardado exitosamente!",
-    profileSaveError: "Error al guardar el perfil. Inténtalo de nuevo.",
-    usernameEmpty: "El nombre de usuario no puede estar vacío",
-    usernameExists: "El nombre de usuario ya existe",
-    usernameTaken: "El nombre de usuario ya está tomado",
-    usernameUpdated: "Nombre de usuario actualizado exitosamente",
-
-    tokenMissing: "Falta el token — vuelve a iniciar sesión.",
-
-    // Account deletion
-    deleteAccount: "Eliminar cuenta",
-    deleteAccountTitle: "Eliminar cuenta",
-    deleteAccountDescription: "Eliminar permanentemente tu cuenta y todos los datos",
-    deleteAccountConfirm:
-      "¿Estás seguro de que quieres eliminar permanentemente tu cuenta?\n\nEsto eliminará:\n- tu perfil\n- todos los chats\n- todos los mensajes\n\nTu nombre de usuario volverá a estar disponible.",
-    deleteAccountForever: "Eliminar para siempre",
-    accountDeleted: "Cuenta eliminada exitosamente",
-    accountDeletedDesc: "Tu perfil y todo el contenido han sido eliminados.",
-    accountDeleteError: "Error al eliminar la cuenta",
+    settingsTitle: 'Configuración',
+    profile: 'Perfil',
+    saveProfile: 'Guardar perfil',
+    security: 'Seguridad',
+    privacy: 'Privacidad',
+    usernameLabel: 'Nombre de usuario',
+    usernameDescription: 'Simplemente ingresa un nuevo nombre y haz clic en "Guardar perfil". Tu nombre de usuario es tu identidad anónima.',
+    enterNewUsername: 'Ingresa tu nuevo nombre de usuario',
+    about: 'Acerca de',
+    defaultTimer: 'Temporizador de mensaje predeterminado',
+    screenLock: 'Bloqueo de pantalla',
+    incognitoKeyboard: 'Teclado incógnito',
+    readReceipts: 'Confirmaciones de lectura',
+    typingIndicators: 'Indicadores de escritura',
+    autoDestructTime: 'Tiempo de autodestrucción para nuevos mensajes',
+    typingIndicatorsDesc: 'Mostrar a otros cuando estás escribiendo',
+    readReceiptsDesc: 'Informar a otros cuando has leído sus mensajes',
+    screenLockDesc: 'Requerir autenticación para acceder a la aplicación',
+    incognitoKeyboardDesc: 'Desactivar aprendizaje del teclado y sugerencias',
+    language: 'Idioma',
+    deleteAllData: 'Eliminar todos los datos',
+    permanentAccount: 'Cuenta permanente',
+    permanentAccountDescription: 'Los nombres de usuario son permanentes como en Wickr Me. Usa cerrar sesión para borrar datos locales.',
+    info: 'Info',
+    deleteAllDataDescription: 'Eliminar permanentemente todos los mensajes y claves',
+    
+    // Time options
+    seconds: 'segundos',
+    minutes: 'minutos',
+    hours: 'horas',
+    days: 'días',
+    
+    // Messages
+    profileSaved: '¡Perfil guardado exitosamente!',
+    profileSaveError: 'Error al guardar el perfil. Inténtalo de nuevo.',
+    usernameEmpty: 'El nombre de usuario no puede estar vacío',
+    usernameExists: 'Nombre de usuario ya existe',
+    
+    // Delete confirmation
+    deleteConfirmTitle: 'Eliminar todos los datos',
+    deleteConfirmDescription: 'Esta acción no se puede deshacer. Todos tus chats, mensajes, claves de cifrado y configuraciones serán eliminados permanentemente de este dispositivo.',
+    cancel: 'Cancelar',
+    deleteEverything: 'Eliminar todo',
   },
-
+  
   tr: {
-    // Common
-    error: "Hata",
-    success: "Başarılı",
-    saving: "Kaydediliyor...",
-    deleting: "Siliniyor...",
-    blocking: "Engelleniyor...",
-
-    // Welcome / Auth
-    welcome: "Velumchat'a Hoş Geldiniz",
-    welcomeDescription: "Uçtan uca şifrelemeli güvenli, anonim mesajlaşma",
-    createAccount: "Hesap Oluştur",
-    login: "Giriş Yap",
-    username: "Kullanıcı Adı",
-    password: "Şifre",
-    chooseUsername: "Kullanıcı adınızı seçin",
-    chooseUsernameHint: "Herhangi bir kullanıcı adı seçin (minimum 3 karakter)",
-    usernameRequired: "Kullanıcı adı gerekli",
-    enterUsername: "Lütfen bir kullanıcı adı girin",
-    usernameTooShort: "Kullanıcı adı çok kısa",
-    usernameMinLength: "Kullanıcı adı en az 3 karakter olmalı",
-
-    loginSuccess: "Giriş başarılı",
-    loginFailed: "Geçersiz kullanıcı adı veya şifre",
-    passwordRequired: "Şifre gerekli",
-    enterPassword: "Lütfen bir şifre girin",
-    passwordTooShort: "Şifre çok kısa",
-    passwordMinLength: "Şifre en az 6 karakter olmalı",
-    accountCreated: "Güvenli kimliğiniz oluşturuldu",
-    registrationFailed: "Kayıt başarısız",
-    accountCreationFailed: "Hesap oluşturulamadı",
-    noPhoneRequired: "Telefon veya e-posta gerekli değil",
-    selfDestructing: "Kendini imha eden mesajlar",
-    zeroDataRetention: "Sıfır veri saklama",
-    chooseIdentity: "Kimliğinizi seçin",
-    enterCredentials: "Mevcut kullanıcı adınızı ve şifrenizi girin",
-    features: "Özellikler",
-
+    // Welcome Page
+    welcome: 'Velumchat\'a Hoş Geldiniz',
+    welcomeDescription: 'Uçtan uca şifrelemeli güvenli, anonim mesajlaşma',
+    createAccount: 'Hesap Oluştur',
+    login: 'Giriş Yap',
+    username: 'Kullanıcı Adı',
+    password: 'Şifre',
+    generateUsername: 'Rastgele Kullanıcı Adı Oluştur',
+    chooseUsername: 'Kullanıcı adınızı seçin',
+    chooseUsernameHint: 'Herhangi bir kullanıcı adı seçin (minimum 3 karakter)',
+    enterCredentials: 'Mevcut kullanıcı adınızı ve şifrenizi girin',
+    
     // Chat
-    searchUsers: "Kullanıcı ara...",
-    searchChats: "Sohbet ara...",
-    startChat: "Sohbet Başlat",
-    typeMessage: "Mesaj yazın...",
-    sendMessage: "Gönder",
-    online: "Çevrimiçi",
-    offline: "Çevrimdışı",
-    connecting: "Bağlanıyor...",
-    connected: "Bağlandı",
-    disconnected: "Bağlantı kesildi",
-    realTimeChat: "Gerçek zamanlı sohbet",
-    encryptedChat: "Şifreli sohbet",
-    loadingChats: "Sohbetler yükleniyor...",
-    noChats: "Henüz sohbet yok",
-    noChatDescription: "Şifreli sohbet başlatmak için kullanıcı arayın",
-    selectChatToStart: "Güvenli mesajlaşma için bir sohbet seçin",
-    welcomeToWhispergram: "Whispergram'a hoş geldiniz",
-
-    notConnected: "Bağlı değil! Bağlantı kurulana kadar lütfen bekleyin.",
-    selectChatFirst: "Dosya yüklemeden önce bir sohbet seçin ve bağlı olduğunuzdan emin olun.",
-    fileTooLarge: "Dosya çok büyük! Maksimum 10MB.",
-    failedToReadFile: "Görsel dosyası okunamadı",
-    selectChatPhoto: "Fotoğraf çekmeden önce bir sohbet seçin ve bağlı olduğunuzdan emin olun.",
-
-    now: "şimdi",
-
+    searchUsers: 'Kullanıcı ara...',
+    startChat: 'Sohbet Başlat',
+    typeMessage: 'Mesaj yazın...',
+    sendMessage: 'Gönder',
+    online: 'Çevrimiçi',
+    offline: 'Çevrimdışı',
+    settings: 'Ayarlar',
+    
     // Settings
-    settingsTitle: "Ayarlar",
-    profile: "Profil",
-    saveProfile: "Profili Kaydet",
-    usernameLabel: "Kullanıcı adı",
-    usernameDescription:
-      'Yeni bir isim girin ve "Profili Kaydet"e tıklayın. Kullanıcı adınız anonim kimliğinizdir.',
-    enterNewUsername: "Yeni kullanıcı adınızı girin",
-    language: "Dil",
-    about: "Hakkında",
-    aboutText: "VelumChat — uçtan uca şifreli mesajlaşma.",
+    settingsTitle: 'Ayarlar',
+    profile: 'Profil',
+    saveProfile: 'Profili Kaydet',
+    security: 'Güvenlik',
+    privacy: 'Gizlilik',
+    usernameLabel: 'Kullanıcı adı',
+    usernameDescription: 'Sadece yeni bir isim girin ve "Profili Kaydet"e tıklayın. Kullanıcı adınız anonim kimliğinizdir.',
+    enterNewUsername: 'Yeni kullanıcı adınızı girin',
+    about: 'Hakkında',
+    defaultTimer: 'Varsayılan Mesaj Zamanlayıcısı',
+    screenLock: 'Ekran Kilidi',
+    incognitoKeyboard: 'Gizli Klavye',
+    readReceipts: 'Okundu Bilgisi',
+    typingIndicators: 'Yazma Göstergeleri',
+    autoDestructTime: 'Yeni mesajlar için otomatik imha zamanı',
+    typingIndicatorsDesc: 'Başkalarına ne zaman yazdığınızı gösterin',
+    readReceiptsDesc: 'Başkalarına mesajlarını ne zaman okuduğunuzu bildirin',
+    screenLockDesc: 'Uygulamaya erişim için kimlik doğrulama gerektir',
+    incognitoKeyboardDesc: 'Klavye öğrenme ve önerileri devre dışı bırak',
+    language: 'Dil',
+    deleteAllData: 'Tüm Verileri Sil',
+    permanentAccount: 'Kalıcı hesap',
+    permanentAccountDescription: 'Kullanıcı adları Wickr Me gibi kalıcıdır. Yerel verileri temizlemek için çıkış yapın.',
+    info: 'Bilgi',
+    deleteAllDataDescription: 'Tüm mesajları ve anahtarları kalıcı olarak kaldır',
+  }
+} as const;
 
-    profileSaved: "Profil başarıyla kaydedildi!",
-    profileSaveError: "Profil kaydedilemedi. Lütfen tekrar deneyin.",
-    usernameEmpty: "Kullanıcı adı boş olamaz",
-    usernameExists: "Kullanıcı adı zaten alınmış",
-    usernameTaken: "Kullanıcı adı zaten alınmış",
-    usernameUpdated: "Kullanıcı adı başarıyla güncellendi",
-
-    tokenMissing: "Token eksik — lütfen tekrar giriş yapın.",
-
-    // Account deletion
-    deleteAccount: "Hesabı Sil",
-    deleteAccountTitle: "Hesabı Sil",
-    deleteAccountDescription: "Hesabınızı ve tüm verileri kalıcı olarak silin",
-    deleteAccountConfirm:
-      "Hesabınızı kalıcı olarak silmek istediğinizden emin misiniz?\n\nBu işlem şunları silecek:\n- profiliniz\n- tüm sohbetler\n- tüm mesajlar\n\nKullanıcı adınız tekrar kullanılabilir olacak.",
-    deleteAccountForever: "Kalıcı olarak sil",
-    accountDeleted: "Hesap başarıyla silindi",
-    accountDeletedDesc: "Profiliniz ve tüm içerikler silindi.",
-    accountDeleteError: "Hesap silinirken hata oluştu",
-  },
-};
+// Language context and hook
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import type { ReactNode } from 'react';
 
 interface LanguageContextType {
   language: Language;
   setLanguage: (lang: Language) => void;
-  t: (key: keyof TranslationSchema, params?: Params) => string;
+  t: (key: keyof typeof translations.en, params?: Record<string, string>) => string;
 }
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
-function applyParams(text: string, params?: Params) {
-  if (!params) return text;
-  let out = text;
-  for (const [k, v] of Object.entries(params)) {
-    out = out.replaceAll(`{${k}}`, v);
-  }
-  return out;
-}
-
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [language, setLanguageState] = useState<Language>(() => {
-    const saved = localStorage.getItem("whispergram-language");
-    return (saved as Language) || "en";
+    const saved = localStorage.getItem('whispergram-language');
+    return (saved as Language) || 'en';
   });
 
   const setLanguage = (lang: Language) => {
     setLanguageState(lang);
-    localStorage.setItem("whispergram-language", lang);
+    localStorage.setItem('whispergram-language', lang);
+  };
+
+  const t = (key: keyof typeof translations.en, params?: Record<string, string>): string => {
+    let text = translations[language][key] || translations.en[key] || key;
+    
+    // Simple parameter replacement for dynamic values
+    if (params) {
+      Object.entries(params).forEach(([param, value]) => {
+        text = text.replace(`{${param}}`, value);
+      });
+    }
+    
+    return text;
   };
 
   useEffect(() => {
     document.documentElement.lang = language;
   }, [language]);
 
-  const value = useMemo<LanguageContextType>(() => {
-    const dict = base[language] || base.en;
-
-    return {
-      language,
-      setLanguage,
-      t: (key, params) => {
-        const raw = (dict as any)[key] ?? (base.en as any)[key] ?? String(key);
-        return applyParams(String(raw), params);
-      },
-    };
-  }, [language]);
-
-  return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
+  return (
+    <LanguageContext.Provider value={{ language, setLanguage, t }}>
+      {children}
+    </LanguageContext.Provider>
+  );
 }
 
 export function useLanguage() {
-  const ctx = useContext(LanguageContext);
-  if (!ctx) throw new Error("useLanguage must be used within a LanguageProvider");
-  return ctx;
+  const context = useContext(LanguageContext);
+  if (context === undefined) {
+    throw new Error('useLanguage must be used within a LanguageProvider');
+  }
+  return context;
 }
