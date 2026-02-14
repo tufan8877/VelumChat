@@ -41,9 +41,9 @@ export default function ChatView({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ✅ Composer measurement (fixes “last message cut off” on iPhone/iPad/Android/Desktop)
+  // ✅ Composer measurement (fixes “last message cut off” and iOS viewport issues)
   const composerRef = useRef<HTMLDivElement>(null);
-  const [composerHeight, setComposerHeight] = useState(180);
+  const [composerHeight, setComposerHeight] = useState(160);
 
   const localTypingRef = useRef(false);
   const typingIdleTimerRef = useRef<any>(null);
@@ -59,7 +59,6 @@ export default function ChatView({
   };
 
   const scrollToBottom = (smooth = true) => {
-    // requestAnimationFrame reduces iOS “jump / flicker”
     requestAnimationFrame(() => {
       messagesEndRef.current?.scrollIntoView({
         behavior: smooth ? "smooth" : "auto",
@@ -75,7 +74,7 @@ export default function ChatView({
 
     const update = () => {
       const h = Math.ceil(el.getBoundingClientRect().height || 0);
-      setComposerHeight(h > 0 ? h : 180);
+      setComposerHeight(h > 0 ? h : 160);
     };
 
     update();
@@ -84,9 +83,7 @@ export default function ChatView({
     try {
       ro = new ResizeObserver(() => update());
       ro.observe(el);
-    } catch {
-      // ignore
-    }
+    } catch {}
 
     window.addEventListener("resize", update);
     window.addEventListener("orientationchange", update);
@@ -98,7 +95,7 @@ export default function ChatView({
     };
   }, []);
 
-  // Auto-scroll only if user is near bottom (prevents stealing scroll)
+  // Auto-scroll only if user is near bottom
   useEffect(() => {
     if (messages.length === 0) return;
     if (isNearBottom()) scrollToBottom(false);
@@ -176,8 +173,6 @@ export default function ChatView({
     stopTyping();
     onSendMessage(text, "text", Math.max(getTimerSeconds(), 5));
     setMessageInput("");
-
-    // keep view stable
     scrollToBottom(false);
   };
 
@@ -258,10 +253,20 @@ export default function ChatView({
   const statusDotClass = !isConnected ? "bg-red-500" : otherOnline ? "bg-green-500" : "bg-muted-foreground/60";
   const statusText = !isConnected ? t("connecting") : otherOnline ? t("online") : t("offline");
 
+  // ✅ Reserve space for fixed composer
   const bottomSpace = `calc(${composerHeight}px + env(safe-area-inset-bottom) + 16px)`;
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 w-full overflow-x-hidden bg-background">
+    // ✅ IMPORTANT: use 100dvh on iOS Safari to avoid “input disappears”
+    <div
+      className="flex-1 flex flex-col w-full overflow-x-hidden bg-background min-h-0 h-[100dvh]"
+      style={
+        {
+          // variable used by messages padding + scroll margin
+          ["--composer-h" as any]: bottomSpace,
+        } as React.CSSProperties
+      }
+    >
       {/* Header */}
       <div className="flex-shrink-0 w-full bg-background border-b border-border px-3 py-3 md:px-4 md:py-4">
         <div className="flex items-center justify-between gap-2 w-full">
@@ -356,7 +361,7 @@ export default function ChatView({
         ref={scrollRef}
         className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden custom-scrollbar px-3 md:px-4 py-3 space-y-3"
         style={{
-          paddingBottom: bottomSpace,
+          paddingBottom: "var(--composer-h)",
           WebkitOverflowScrolling: "touch",
         }}
       >
@@ -386,21 +391,15 @@ export default function ChatView({
           </div>
         )}
 
-        <div
-          ref={messagesEndRef}
-          style={{
-            scrollMarginBottom: bottomSpace,
-          }}
-        />
+        <div ref={messagesEndRef} style={{ scrollMarginBottom: "var(--composer-h)" }} />
       </div>
 
-      {/* Input sticky */}
+      {/* ✅ FIX: input is FIXED (not sticky) so it never disappears on iOS */}
       <div
         ref={composerRef}
-        className="sticky bottom-0 w-full bg-background border-t border-border"
+        className="fixed left-0 right-0 bottom-0 z-50 bg-background border-t border-border"
         style={{
           paddingBottom: "env(safe-area-inset-bottom)",
-          // helps iOS Safari compositing (reduces flicker)
           WebkitTransform: "translateZ(0)",
         }}
       >
