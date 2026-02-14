@@ -33,7 +33,7 @@ export default function ImprintPage() {
               <h3 className="font-semibold mb-2">{t('operatorInfo')}</h3>
               <p className="text-muted-foreground">
                 Tufan.D<br />
-                Velumchat.com<br />
+                velumchat.com<br />
                 {t('secureMessaging')}<br />
                 {t('anonymousService')}
               </p>
