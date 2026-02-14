@@ -1,22 +1,11 @@
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useLanguage } from "@/lib/i18n";
 import Message from "./message";
-import {
-  Paperclip,
-  Send,
-  Smile,
-  Lock,
-  Clock,
-  MoreVertical,
-  Shield,
-  ArrowLeft,
-  Trash2,
-  UserX,
-} from "lucide-react";
+import { Paperclip, Send, Smile, Lock, Clock, MoreVertical, Shield, ArrowLeft, Trash2, UserX } from "lucide-react";
 import type { User, Chat, Message as MessageType } from "@shared/schema";
 
 interface ChatViewProps {
@@ -32,13 +21,6 @@ interface ChatViewProps {
   onDeleteChat: (chatId: number) => Promise<void> | void;
   onBlockUser: (userId: number) => Promise<void> | void;
 }
-
-// iOS/Safari helper (prevents smooth-scroll flicker when keyboard is open)
-const isIOS = () => {
-  if (typeof navigator === "undefined") return false;
-  const ua = navigator.userAgent || "";
-  return /iPad|iPhone|iPod/.test(ua) || (ua.includes("Mac") && "ontouchend" in document);
-};
 
 export default function ChatView({
   currentUser,
@@ -56,131 +38,73 @@ export default function ChatView({
   const [destructTimer, setDestructTimer] = useState("300");
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const composerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const localTypingRef = useRef(false);
   const typingIdleTimerRef = useRef<any>(null);
   const typingThrottleRef = useRef<number>(0);
 
+  // used to keep scroll pinned when user is at bottom (prevents "input moves down" / page scroll on iOS)
+  const shouldPinToBottomRef = useRef(true);
+
   const { t } = useLanguage();
 
-  // ----------------------------
-  // ✅ Expiring messages (client-side hide)
-  // Server deletes them periodically, but UI should also hide them immediately when expired.
-  // ----------------------------
-  const [nowTick, setNowTick] = useState(() => Date.now());
-  useEffect(() => {
-    const id = window.setInterval(() => setNowTick(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, []);
-
-  const visibleMessages = useMemo(() => {
-    const now = nowTick;
-    return (messages || []).filter((m: any) => {
-      if (!m) return false;
-      const exp = (m as any).expiresAt;
-      if (!exp) return true;
-      const expMs = new Date(exp).getTime();
-      return Number.isFinite(expMs) ? expMs > now : true;
-    });
-  }, [messages, nowTick]);
-
-  // ----------------------------
-  // ✅ Scroll helpers
-  // ----------------------------
   const isNearBottom = () => {
     const el = scrollRef.current;
     if (!el) return true;
-    const distance = el.scrollHeight - (el.scrollTop + el.clientHeight);
-    return distance < 220;
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    return distance < 160;
   };
 
-  const scrollToBottom = (smooth = true) => {
+  const scrollToBottom = (smooth = false) => {
     const el = scrollRef.current;
     if (!el) return;
 
-    const useSmooth = smooth && !isIOS();
-
+    // IMPORTANT: use scrollTop inside the message container (NOT scrollIntoView),
+    // otherwise iOS Safari may scroll the whole page and push the input out of view.
+    const top = el.scrollHeight;
     try {
-      el.scrollTo({ top: el.scrollHeight, behavior: useSmooth ? "smooth" : "auto" });
+      el.scrollTo({ top, behavior: smooth ? "smooth" : "auto" });
     } catch {
-      el.scrollTop = el.scrollHeight;
+      el.scrollTop = top;
     }
   };
 
-  // Only autoscroll when a NEW message arrives
-  const lastMsgId = visibleMessages.length ? (visibleMessages[visibleMessages.length - 1] as any).id : null;
-
+  // track if user has scrolled up manually
   useEffect(() => {
-    if (!selectedChat) return;
-    if (!lastMsgId) return;
+    const el = scrollRef.current;
+    if (!el) return;
 
-    if (isNearBottom()) {
-      requestAnimationFrame(() => scrollToBottom(true));
+    const onScroll = () => {
+      shouldPinToBottomRef.current = isNearBottom();
+    };
+
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // keep pinned when new messages arrive, but only if user is near bottom
+  useLayoutEffect(() => {
+    if (!selectedChat) return;
+    if (!scrollRef.current) return;
+
+    if (shouldPinToBottomRef.current) {
+      // rAF avoids layout flicker while typing on iOS
+      requestAnimationFrame(() => scrollToBottom(false));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedChat?.id, lastMsgId]);
+  }, [messages.length, selectedChat?.id]);
 
-  useEffect(() => {
-    if (isOtherTyping && isNearBottom()) {
+  // typing indicator should also keep pinned (but only if near bottom)
+  useLayoutEffect(() => {
+    if (!selectedChat) return;
+    if (isOtherTyping && shouldPinToBottomRef.current) {
       requestAnimationFrame(() => scrollToBottom(true));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOtherTyping]);
 
-  // ----------------------------
-  // ✅ Mobile keyboard / VisualViewport fix
-  // Ensures the composer stays visible and the list scroll area accounts for keyboard height.
-  // ----------------------------
-  const [composerHeight, setComposerHeight] = useState(120);
-  const [keyboardOffset, setKeyboardOffset] = useState(0);
-
-  useEffect(() => {
-    const el = composerRef.current;
-    if (!el) return;
-
-    const ro = new ResizeObserver(() => {
-      const h = el.getBoundingClientRect().height;
-      if (h && Math.abs(h - composerHeight) > 1) setComposerHeight(h);
-    });
-    ro.observe(el);
-
-    const h0 = el.getBoundingClientRect().height;
-    if (h0) setComposerHeight(h0);
-
-    return () => ro.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    const vv = (window as any).visualViewport as VisualViewport | undefined;
-    if (!vv) return;
-
-    const calc = () => {
-      const offset = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
-      setKeyboardOffset(offset);
-    };
-
-    calc();
-    vv.addEventListener("resize", calc);
-    vv.addEventListener("scroll", calc);
-    window.addEventListener("orientationchange", calc);
-
-    return () => {
-      vv.removeEventListener("resize", calc);
-      vv.removeEventListener("scroll", calc);
-      window.removeEventListener("orientationchange", calc);
-    };
-  }, []);
-
-  const handleFocus = () => {
-    if (isNearBottom()) requestAnimationFrame(() => scrollToBottom(false));
-  };
-
-  // ----------------------------
-  // Timer helpers
-  // ----------------------------
   const getTimerSeconds = () => {
     const s = parseInt(destructTimer, 10);
     return Number.isFinite(s) ? s : 300;
@@ -248,6 +172,8 @@ export default function ChatView({
     onSendMessage(text, "text", getTimerSeconds());
     setMessageInput("");
 
+    // keep pinned after sending
+    shouldPinToBottomRef.current = true;
     requestAnimationFrame(() => scrollToBottom(false));
   };
 
@@ -278,6 +204,8 @@ export default function ChatView({
     else onSendMessage(file.name, "file", secs, file);
 
     if (fileInputRef.current) fileInputRef.current.value = "";
+
+    shouldPinToBottomRef.current = true;
     requestAnimationFrame(() => scrollToBottom(false));
   };
 
@@ -328,10 +256,10 @@ export default function ChatView({
   const statusDotClass = !isConnected ? "bg-red-500" : otherOnline ? "bg-green-500" : "bg-muted-foreground/60";
   const statusText = !isConnected ? t("connecting") : otherOnline ? t("online") : t("offline");
 
-  const composerPadBottom = `calc(env(safe-area-inset-bottom) + ${keyboardOffset}px)`;
-  const listPadBottom = `calc(${composerHeight}px + env(safe-area-inset-bottom) + ${keyboardOffset}px + 12px)`;
-
   return (
+    // IMPORTANT:
+    // - min-h-0 + flex-col keeps the messages area scrollable
+    // - avoid "sticky bottom" for input on iOS Safari (causes jump/flackering)
     <div className="flex-1 flex flex-col min-h-0 w-full overflow-x-hidden bg-background">
       {/* Header */}
       <div className="flex-shrink-0 w-full bg-background border-b border-border px-3 py-3 md:px-4 md:py-4">
@@ -426,7 +354,6 @@ export default function ChatView({
       <div
         ref={scrollRef}
         className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden custom-scrollbar px-3 md:px-4 py-3 space-y-3"
-        style={{ paddingBottom: listPadBottom, WebkitOverflowScrolling: "touch" as any }}
       >
         <div className="text-center">
           <div className="inline-flex items-center gap-2 bg-surface rounded-full px-4 py-2 text-sm text-text-muted">
@@ -435,13 +362,8 @@ export default function ChatView({
           </div>
         </div>
 
-        {visibleMessages.map((m) => (
-          <Message
-            key={(m as any).id}
-            message={m}
-            isOwn={(m as any).senderId === currentUser.id}
-            otherUser={selectedChat.otherUser}
-          />
+        {messages.map((m) => (
+          <Message key={m.id} message={m} isOwn={m.senderId === currentUser.id} otherUser={selectedChat.otherUser} />
         ))}
 
         {isOtherTyping && (
@@ -460,12 +382,8 @@ export default function ChatView({
         )}
       </div>
 
-      {/* Composer (NOT sticky) */}
-      <div
-        ref={composerRef}
-        className="flex-shrink-0 w-full bg-background border-t border-border"
-        style={{ paddingBottom: composerPadBottom }}
-      >
+      {/* Input (always visible) */}
+      <div className="flex-shrink-0 w-full bg-background border-t border-border" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div className="px-2 pt-2 flex items-end gap-2 flex-nowrap">
           <Button
             variant="ghost"
@@ -493,13 +411,8 @@ export default function ChatView({
               value={messageInput}
               onChange={(e) => handleInputChange(e.target.value)}
               onKeyDown={handleKeyDown}
-              onFocus={handleFocus}
               className="chat-textarea resize-none pr-10"
               rows={1}
-              inputMode="text"
-              autoCorrect="off"
-              autoCapitalize="none"
-              spellCheck={false}
             />
             <Button
               variant="ghost"
