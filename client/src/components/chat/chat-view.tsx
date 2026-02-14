@@ -22,13 +22,6 @@ interface ChatViewProps {
   onBlockUser: (userId: number) => Promise<void> | void;
 }
 
-/**
- * ✅ FIXES (iOS/Android/Desktop):
- * - Prevents the whole page from scrolling when new messages arrive (input bar stays visible).
- * - Avoids Safari "sticky inside overflow" quirks by using an absolutely-positioned composer inside a relative container.
- * - Uses ResizeObserver to keep the message list padded to the current composer height.
- * - Uses visualViewport (when available) to keep composer above iOS keyboard (reduces jump/flicker).
- */
 export default function ChatView({
   currentUser,
   selectedChat,
@@ -44,31 +37,19 @@ export default function ChatView({
   const [messageInput, setMessageInput] = useState("");
   const [destructTimer, setDestructTimer] = useState("300");
 
-  // Scroll container that MUST be the only scrollable area
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  // Composer refs for dynamic height and keyboard offset
-  const composerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ✅ Composer measurement (fixes “last message cut off” on iPhone/iPad/Android/Desktop)
+  const composerRef = useRef<HTMLDivElement>(null);
+  const [composerHeight, setComposerHeight] = useState(180);
 
   const localTypingRef = useRef(false);
   const typingIdleTimerRef = useRef<any>(null);
   const typingThrottleRef = useRef<number>(0);
 
   const { t } = useLanguage();
-
-  const getTimerSeconds = () => {
-    const s = parseInt(destructTimer, 10);
-    return Number.isFinite(s) ? s : 300;
-  };
-
-  const formatDestructTimer = (seconds: number) => {
-    if (seconds < 60) return `${seconds}s`;
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
-    return `${Math.floor(seconds / 86400)}d`;
-  };
 
   const isNearBottom = () => {
     const el = scrollRef.current;
@@ -78,80 +59,61 @@ export default function ChatView({
   };
 
   const scrollToBottom = (smooth = true) => {
-    // IMPORTANT: scrollIntoView must act inside scrollRef (not the page).
-    // Ensuring scrollRef is overflow-y:auto and parent is overflow-hidden fixes "page scroll" on iOS.
-    messagesEndRef.current?.scrollIntoView({
-      behavior: smooth ? "smooth" : "auto",
-      block: "end",
+    // requestAnimationFrame reduces iOS “jump / flicker”
+    requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({
+        behavior: smooth ? "smooth" : "auto",
+        block: "end",
+      });
     });
   };
 
-  // Keep message list padded by the composer height (dynamic on mobile + when textarea grows)
+  // ✅ Measure composer height with ResizeObserver (best cross-platform)
   useLayoutEffect(() => {
-    const composer = composerRef.current;
-    const list = scrollRef.current;
-    if (!composer || !list) return;
+    const el = composerRef.current;
+    if (!el) return;
 
-    const setPad = () => {
-      const h = composer.getBoundingClientRect().height || 0;
-      // +8 for breathing room, safe-area handled in composer
-      list.style.paddingBottom = `${Math.ceil(h) + 8}px`;
+    const update = () => {
+      const h = Math.ceil(el.getBoundingClientRect().height || 0);
+      setComposerHeight(h > 0 ? h : 180);
     };
 
-    setPad();
+    update();
 
     let ro: ResizeObserver | null = null;
-    if ("ResizeObserver" in window) {
-      ro = new ResizeObserver(() => setPad());
-      ro.observe(composer);
+    try {
+      ro = new ResizeObserver(() => update());
+      ro.observe(el);
+    } catch {
+      // ignore
     }
 
-    window.addEventListener("resize", setPad);
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+
     return () => {
-      window.removeEventListener("resize", setPad);
-      ro?.disconnect();
+      if (ro) ro.disconnect();
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
     };
   }, []);
 
-  // ✅ Keyboard handling (iOS Safari / iPadOS): keep composer above keyboard without layout jump
+  // Auto-scroll only if user is near bottom (prevents stealing scroll)
   useEffect(() => {
-    const vv = (window as any).visualViewport as VisualViewport | undefined;
-    const composer = composerRef.current;
-    if (!vv || !composer) return;
-
-    const apply = () => {
-      // When keyboard is open, visualViewport.height shrinks.
-      // We translate composer upward by the difference between layout viewport and visual viewport bottom.
-      const offset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-      composer.style.transform = offset > 0 ? `translateY(-${offset}px)` : "translateY(0px)";
-    };
-
-    apply();
-    vv.addEventListener("resize", apply);
-    vv.addEventListener("scroll", apply);
-    return () => {
-      vv.removeEventListener("resize", apply);
-      vv.removeEventListener("scroll", apply);
-      composer.style.transform = "translateY(0px)";
-    };
-  }, []);
-
-  // Auto-scroll only if user is already near bottom
-  useEffect(() => {
-    if (!selectedChat) return;
     if (messages.length === 0) return;
-
-    if (isNearBottom()) {
-      // requestAnimationFrame prevents iOS flicker/jump
-      requestAnimationFrame(() => scrollToBottom(true));
-    }
+    if (isNearBottom()) scrollToBottom(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, selectedChat?.id]);
+  }, [messages.length]);
 
   useEffect(() => {
-    if (isOtherTyping && isNearBottom()) requestAnimationFrame(() => scrollToBottom(true));
+    if (isOtherTyping && isNearBottom()) scrollToBottom(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOtherTyping]);
+
+  const getTimerSeconds = () => {
+    const s = parseInt(destructTimer, 10);
+    return Number.isFinite(s) ? s : 300;
+  };
 
   const sendTypingSafe = (state: boolean) => {
     if (!isConnected || !selectedChat) return;
@@ -212,11 +174,11 @@ export default function ChatView({
     }
 
     stopTyping();
-    onSendMessage(text, "text", getTimerSeconds());
+    onSendMessage(text, "text", Math.max(getTimerSeconds(), 5));
     setMessageInput("");
 
-    // Keep focus and scroll stable on mobile
-    requestAnimationFrame(() => scrollToBottom(true));
+    // keep view stable
+    scrollToBottom(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -241,12 +203,12 @@ export default function ChatView({
       return;
     }
 
-    const secs = getTimerSeconds();
+    const secs = Math.max(getTimerSeconds(), 5);
     if (file.type.startsWith("image/")) onSendMessage("", "image", secs, file);
     else onSendMessage(file.name, "file", secs, file);
 
     if (fileInputRef.current) fileInputRef.current.value = "";
-    requestAnimationFrame(() => scrollToBottom(true));
+    scrollToBottom(false);
   };
 
   const handleCameraCapture = () => {
@@ -267,9 +229,16 @@ export default function ChatView({
     cameraInput.click();
   };
 
+  const formatDestructTimer = (seconds: number) => {
+    if (seconds < 60) return `${seconds}s`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
+    return `${Math.floor(seconds / 86400)}d`;
+  };
+
   if (!selectedChat) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-background text-foreground w-full overflow-hidden">
+      <div className="flex-1 flex items-center justify-center bg-background text-foreground w-full overflow-x-hidden">
         <div className="text-center space-y-4 p-8">
           <div className="w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center mx-auto">
             <Shield className="w-8 h-8 text-primary" />
@@ -289,9 +258,10 @@ export default function ChatView({
   const statusDotClass = !isConnected ? "bg-red-500" : otherOnline ? "bg-green-500" : "bg-muted-foreground/60";
   const statusText = !isConnected ? t("connecting") : otherOnline ? t("online") : t("offline");
 
+  const bottomSpace = `calc(${composerHeight}px + env(safe-area-inset-bottom) + 16px)`;
+
   return (
-    // ✅ overflow-hidden + relative ensures only the message list scrolls, not the page (fixes iPhone Safari)
-    <div className="relative flex-1 flex flex-col w-full min-h-0 overflow-hidden bg-background">
+    <div className="flex-1 flex flex-col min-h-0 w-full overflow-x-hidden bg-background">
       {/* Header */}
       <div className="flex-shrink-0 w-full bg-background border-b border-border px-3 py-3 md:px-4 md:py-4">
         <div className="flex items-center justify-between gap-2 w-full">
@@ -381,14 +351,13 @@ export default function ChatView({
         </div>
       </div>
 
-      {/* Messages (ONLY scrollable area) */}
+      {/* Messages */}
       <div
         ref={scrollRef}
         className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden custom-scrollbar px-3 md:px-4 py-3 space-y-3"
         style={{
-          // paddingBottom is managed by ResizeObserver (composer height)
+          paddingBottom: bottomSpace,
           WebkitOverflowScrolling: "touch",
-          overscrollBehavior: "contain",
         }}
       >
         <div className="text-center">
@@ -417,16 +386,22 @@ export default function ChatView({
           </div>
         )}
 
-        <div ref={messagesEndRef} />
+        <div
+          ref={messagesEndRef}
+          style={{
+            scrollMarginBottom: bottomSpace,
+          }}
+        />
       </div>
 
-      {/* Composer (anchored, never gets pushed off-screen by message list) */}
+      {/* Input sticky */}
       <div
         ref={composerRef}
-        className="absolute left-0 right-0 bottom-0 w-full bg-background border-t border-border"
+        className="sticky bottom-0 w-full bg-background border-t border-border"
         style={{
           paddingBottom: "env(safe-area-inset-bottom)",
-          willChange: "transform",
+          // helps iOS Safari compositing (reduces flicker)
+          WebkitTransform: "translateZ(0)",
         }}
       >
         <div className="px-2 pt-2 flex items-end gap-2 flex-nowrap">
