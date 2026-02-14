@@ -75,10 +75,7 @@ export default function SettingsModal({ currentUser, onClose, onUpdateUser }: Se
       localStorage.setItem("user", JSON.stringify(updatedUser));
       onUpdateUser(updatedUser);
 
-      toast({
-        title: t("success"),
-        description: t("usernameUpdated"),
-      });
+      toast({ title: t("success"), description: t("usernameUpdated") });
       onClose();
     } catch (err: any) {
       toast({
@@ -102,7 +99,7 @@ export default function SettingsModal({ currentUser, onClose, onUpdateUser }: Se
       return;
     }
 
-    // Confirm in allen Sprachen (Key muss in i18n vorhanden sein)
+    // ✅ i18n Confirm (alle Sprachen)
     const ok = window.confirm(t("deleteAccountConfirm"));
     if (!ok) return;
 
@@ -148,7 +145,6 @@ export default function SettingsModal({ currentUser, onClose, onUpdateUser }: Se
             <DialogTitle className="text-2xl font-bold text-text-primary">
               {t("settingsTitle")}
             </DialogTitle>
-
             <Button variant="ghost" size="sm" onClick={onClose} className="text-text-muted hover:text-text-primary">
               <X className="w-4 h-4" />
             </Button>
@@ -170,7 +166,6 @@ export default function SettingsModal({ currentUser, onClose, onUpdateUser }: Se
                   <label className="block text-sm font-medium text-text-primary mb-2">
                     {t("usernameLabel")}
                   </label>
-
                   <Input
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
@@ -204,7 +199,9 @@ export default function SettingsModal({ currentUser, onClose, onUpdateUser }: Se
           {/* About */}
           <div>
             <h3 className="text-lg font-semibold text-text-primary mb-4">{t("about")}</h3>
-            <div className="text-sm text-text-muted">{t("aboutText")}</div>
+            <div className="text-sm text-text-muted">
+              {t("aboutText")}
+            </div>
           </div>
         </div>
       </DialogContent>
