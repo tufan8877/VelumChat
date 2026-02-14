@@ -24,22 +24,25 @@ export interface IStorage {
   updateUserOnlineStatus(id: number, isOnline: boolean): Promise<void>;
   updateUsername(id: number, username: string): Promise<User>;
 
-  // Messages
-  createMessage(message: InsertMessage & { expiresAt: Date }): Promise<Message>;
-  getMessagesByChat(chatId: number): Promise<Message[]>;
-  deleteExpiredMessages(): Promise<number>;
-
   // Chats
+  getChat(chatId: number): Promise<Chat | undefined>;
   createChat(chat: InsertChat): Promise<Chat>;
   getChatsByUserId(
     userId: number
   ): Promise<Array<Chat & { otherUser: User; lastMessage?: Message; unreadCount: number }>>;
-
   getChatByParticipants(user1Id: number, user2Id: number): Promise<Chat | undefined>;
   getOrCreateChatByParticipants(user1Id: number, user2Id: number): Promise<Chat>;
   updateChatLastMessage(chatId: number, messageId: number): Promise<void>;
   incrementUnreadCount(chatId: number, userId: number): Promise<void>;
   resetUnreadCount(chatId: number, userId: number): Promise<void>;
+
+  // Messages
+  createMessage(message: InsertMessage & { expiresAt: Date }): Promise<Message>;
+  getMessagesByChat(chatId: number): Promise<Message[]>;
+  deleteExpiredMessages(): Promise<number>;
+  findMessageByUploadFilename(
+    filename: string
+  ): Promise<Pick<Message, "id" | "senderId" | "receiverId" | "chatId"> | null>;
 
   // Search
   searchUsers(query: string, excludeId: number): Promise<User[]>;
@@ -48,12 +51,12 @@ export interface IStorage {
   blockUser(blockerId: number, blockedId: number): Promise<void>;
   deleteChatForUser(userId: number, chatId: number): Promise<void>;
   getDeletedAtForUserChat(userId: number, chatId: number): Promise<Date | null>;
-
   isChatDeletedForUser(userId: number, chatId: number): Promise<boolean>;
   reactivateChatForUser(userId: number, chatId: number): Promise<void>;
 }
 
 class DatabaseStorage implements IStorage {
+  // Users
   async getUser(id: number): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user || undefined;
@@ -78,19 +81,10 @@ class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async createMessage(message: InsertMessage & { expiresAt: Date }): Promise<Message> {
-    const [msg] = await db.insert(messages).values(message as any).returning();
-    return msg;
-  }
-
-  async getMessagesByChat(chatId: number): Promise<Message[]> {
-    return await db.select().from(messages).where(eq(messages.chatId, chatId)).orderBy(asc(messages.createdAt));
-  }
-
-  async deleteExpiredMessages(): Promise<number> {
-    const now = new Date();
-    const result: any = await db.delete(messages).where(sql`${messages.expiresAt} < ${now}`);
-    return (result?.rowCount ?? result?.changes ?? 0) as number;
+  // Chats
+  async getChat(chatId: number): Promise<Chat | undefined> {
+    const [chat] = await db.select().from(chats).where(eq(chats.id, chatId));
+    return chat || undefined;
   }
 
   async createChat(chat: InsertChat): Promise<Chat> {
@@ -185,6 +179,42 @@ class DatabaseStorage implements IStorage {
     }
   }
 
+  // Messages
+  async createMessage(message: InsertMessage & { expiresAt: Date }): Promise<Message> {
+    const [msg] = await db.insert(messages).values(message as any).returning();
+    return msg;
+  }
+
+  async getMessagesByChat(chatId: number): Promise<Message[]> {
+    return await db.select().from(messages).where(eq(messages.chatId, chatId)).orderBy(asc(messages.createdAt));
+  }
+
+  async deleteExpiredMessages(): Promise<number> {
+    const now = new Date();
+    const result: any = await db.delete(messages).where(sql`${messages.expiresAt} < ${now}`);
+    return (result?.rowCount ?? result?.changes ?? 0) as number;
+  }
+
+  async findMessageByUploadFilename(
+    filename: string
+  ): Promise<Pick<Message, "id" | "senderId" | "receiverId" | "chatId"> | null> {
+    const like = `%/uploads/${filename}%`;
+    const [row] = await db
+      .select({
+        id: messages.id,
+        senderId: messages.senderId,
+        receiverId: messages.receiverId,
+        chatId: messages.chatId,
+      })
+      .from(messages)
+      .where(or(eq(messages.fileName, filename), sql`${messages.content} ILIKE ${like}`))
+      .orderBy(desc(messages.createdAt))
+      .limit(1);
+
+    return row ?? null;
+  }
+
+  // Search
   async searchUsers(query: string, excludeId: number): Promise<User[]> {
     const validExcludeId = Number.isFinite(excludeId) ? excludeId : 0;
 
@@ -195,6 +225,7 @@ class DatabaseStorage implements IStorage {
       .limit(10);
   }
 
+  // Block / Delete chat
   async blockUser(blockerId: number, blockedId: number): Promise<void> {
     await db.insert(blockedUsers).values({ blockerId, blockedId } as any).onConflictDoNothing();
   }
