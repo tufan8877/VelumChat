@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -17,8 +17,6 @@ interface ChatViewProps {
   isOtherTyping: boolean;
   isConnected: boolean;
   onBackToList: () => void;
-
-  // ✅ NEW:
   onDeleteChat: (chatId: number) => Promise<void> | void;
   onBlockUser: (userId: number) => Promise<void> | void;
 }
@@ -48,25 +46,68 @@ export default function ChatView({
 
   const { t } = useLanguage();
 
+  // ---- Cross-platform scroll constants ----
+  // Messages container has paddingBottom to not get hidden behind the sticky input.
+  const MESSAGES_BOTTOM_PADDING_PX = 170;
+  // Threshold must be bigger than paddingBottom, otherwise "nearBottom" is never true.
+  const NEAR_BOTTOM_THRESHOLD_PX = 320;
+
   const isNearBottom = () => {
     const el = scrollRef.current;
     if (!el) return true;
     const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-    return distance < 160;
+    return distance < NEAR_BOTTOM_THRESHOLD_PX;
   };
 
   const scrollToBottom = (smooth = true) => {
-    messagesEndRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "end" });
+    messagesEndRef.current?.scrollIntoView({
+      behavior: smooth ? "smooth" : "auto",
+      block: "end",
+    });
   };
 
+  // ✅ 1) Auto-scroll when new messages arrive (only if user is near bottom)
   useEffect(() => {
+    if (!selectedChat) return;
     if (messages.length === 0) return;
-    if (isNearBottom()) setTimeout(() => scrollToBottom(true), 0);
-  }, [messages]);
+    if (isNearBottom()) requestAnimationFrame(() => scrollToBottom(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, selectedChat?.id]);
 
+  // ✅ 2) Auto-scroll when typing indicator appears and user is near bottom
   useEffect(() => {
-    if (isOtherTyping && isNearBottom()) setTimeout(() => scrollToBottom(true), 0);
-  }, [isOtherTyping]);
+    if (!selectedChat) return;
+    if (isOtherTyping && isNearBottom()) requestAnimationFrame(() => scrollToBottom(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOtherTyping, selectedChat?.id]);
+
+  // ✅ 3) iOS/Android keyboard handling (visualViewport)
+  // When keyboard opens -> viewport height changes -> scroll bottom if user is near bottom.
+  useEffect(() => {
+    if (!selectedChat) return;
+
+    const vv = (window as any).visualViewport as VisualViewport | undefined;
+    if (!vv) {
+      // Fallback: resize listener
+      const onResize = () => {
+        if (isNearBottom()) requestAnimationFrame(() => scrollToBottom(false));
+      };
+      window.addEventListener("resize", onResize);
+      return () => window.removeEventListener("resize", onResize);
+    }
+
+    const onVVResize = () => {
+      if (isNearBottom()) requestAnimationFrame(() => scrollToBottom(false));
+    };
+
+    vv.addEventListener("resize", onVVResize);
+    vv.addEventListener("scroll", onVVResize);
+    return () => {
+      vv.removeEventListener("resize", onVVResize);
+      vv.removeEventListener("scroll", onVVResize);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedChat?.id]);
 
   const getTimerSeconds = () => {
     const s = parseInt(destructTimer, 10);
@@ -134,7 +175,7 @@ export default function ChatView({
     stopTyping();
     onSendMessage(text, "text", getTimerSeconds());
     setMessageInput("");
-    setTimeout(() => scrollToBottom(true), 30);
+    requestAnimationFrame(() => scrollToBottom(true));
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -164,7 +205,7 @@ export default function ChatView({
     else onSendMessage(file.name, "file", secs, file);
 
     if (fileInputRef.current) fileInputRef.current.value = "";
-    setTimeout(() => scrollToBottom(true), 30);
+    requestAnimationFrame(() => scrollToBottom(true));
   };
 
   const handleCameraCapture = () => {
@@ -191,6 +232,12 @@ export default function ChatView({
     if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
     return `${Math.floor(seconds / 86400)}d`;
   };
+
+  // ✅ This is the “messages you want to show”: only messages for this chat
+  const chatMessages = useMemo(() => {
+    if (!selectedChat) return [];
+    return messages.filter((m) => Number((m as any).chatId) === Number(selectedChat.id));
+  }, [messages, selectedChat]);
 
   if (!selectedChat) {
     return (
@@ -241,7 +288,6 @@ export default function ChatView({
                 <span className={otherOnline ? "text-green-400" : "text-muted-foreground"}>{statusText}</span>
                 <span className="text-muted-foreground">•</span>
                 <Lock className="w-3 h-3 text-accent flex-shrink-0" />
-                {/* ✅ Removed "Real-time chat" text */}
               </div>
             </div>
           </div>
@@ -267,7 +313,6 @@ export default function ChatView({
               </Select>
             </div>
 
-            {/* ✅ Menu: delete chat + block user */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="w-10 h-10 rounded-full touch-target" aria-label="Menu">
@@ -295,7 +340,6 @@ export default function ChatView({
                     const ok = window.confirm(`User "${selectedChat.otherUser.username}" blockieren?`);
                     if (!ok) return;
                     await onBlockUser(selectedChat.otherUser.id);
-                    // optional: zurück zur liste
                     onBackToList();
                   }}
                 >
@@ -312,7 +356,7 @@ export default function ChatView({
       <div
         ref={scrollRef}
         className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden custom-scrollbar px-3 md:px-4 py-3 space-y-3"
-        style={{ paddingBottom: "calc(170px + env(safe-area-inset-bottom))" }}
+        style={{ paddingBottom: `calc(${MESSAGES_BOTTOM_PADDING_PX}px + env(safe-area-inset-bottom))` }}
       >
         <div className="text-center">
           <div className="inline-flex items-center gap-2 bg-surface rounded-full px-4 py-2 text-sm text-text-muted">
@@ -321,7 +365,7 @@ export default function ChatView({
           </div>
         </div>
 
-        {messages.map((m) => (
+        {chatMessages.map((m) => (
           <Message key={m.id} message={m} isOwn={m.senderId === currentUser.id} otherUser={selectedChat.otherUser} />
         ))}
 
@@ -343,7 +387,7 @@ export default function ChatView({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input sticky */}
+      {/* Input */}
       <div className="sticky bottom-0 w-full bg-background border-t border-border" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div className="px-2 pt-2 flex items-end gap-2 flex-nowrap">
           <Button
@@ -374,6 +418,10 @@ export default function ChatView({
               onKeyDown={handleKeyDown}
               className="chat-textarea resize-none pr-10"
               rows={1}
+              onFocus={() => {
+                // keyboard open -> ensure bottom visible
+                requestAnimationFrame(() => scrollToBottom(true));
+              }}
             />
             <Button
               variant="ghost"
