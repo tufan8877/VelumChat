@@ -1060,7 +1060,7 @@ export const translations = {
     faq9Question: "¿Se puede usar el servicio para actividades ilegales?",
     faq9Answer: "Los usuarios son responsables de cumplir las leyes locales. Aunque proporcionamos herramientas de privacidad, no respaldamos actividades ilegales.",
     faq10Question: "¿Está disponible el código fuente?",
-    faq10Answer: "Sí. Whispergram es de código abierto y puede auditarse para seguridad. El código está disponible para revisión y auto-hospedaje.",
+    faq10Answer: "Sí. VelumChat es de código abierto y puede auditarse para seguridad. El código está disponible para revisión y auto-hospedaje.",
 
     // Security notice translations - Spanish
     messagesNotStored: "Tus mensajes nunca se almacenan en nuestros servidores",
