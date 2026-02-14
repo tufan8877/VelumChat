@@ -6,6 +6,7 @@ import { LanguageSelector } from "@/components/ui/language-selector";
 import { useToast } from "@/hooks/use-toast";
 import { X, UserRound, Trash2 } from "lucide-react";
 import type { User } from "@shared/schema";
+import { useLanguage } from "@/lib/i18n";
 
 interface SettingsModalProps {
   currentUser: User & { privateKey: string; token?: string };
@@ -26,6 +27,7 @@ function getToken(): string | null {
 
 export default function SettingsModal({ currentUser, onClose, onUpdateUser }: SettingsModalProps) {
   const { toast } = useToast();
+  const { t } = useLanguage();
 
   const [username, setUsername] = useState(currentUser.username);
   const [isSaving, setIsSaving] = useState(false);
@@ -34,13 +36,21 @@ export default function SettingsModal({ currentUser, onClose, onUpdateUser }: Se
   const handleSaveProfile = async () => {
     const newName = String(username || "").trim();
     if (!newName) {
-      toast({ title: "Error", description: "Username darf nicht leer sein.", variant: "destructive" });
+      toast({
+        title: t("error"),
+        description: t("usernameEmpty"),
+        variant: "destructive",
+      });
       return;
     }
 
     const token = getToken();
     if (!token) {
-      toast({ title: "Error", description: "Token fehlt – bitte neu einloggen.", variant: "destructive" });
+      toast({
+        title: t("error"),
+        description: t("tokenMissing"),
+        variant: "destructive",
+      });
       return;
     }
 
@@ -58,19 +68,22 @@ export default function SettingsModal({ currentUser, onClose, onUpdateUser }: Se
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok || !data?.ok) {
-        throw new Error(data?.message || "Profil konnte nicht gespeichert werden");
+        throw new Error(data?.message || t("profileSaveError"));
       }
 
       const updatedUser = { ...currentUser, username: newName };
       localStorage.setItem("user", JSON.stringify(updatedUser));
       onUpdateUser(updatedUser);
 
-      toast({ title: "Gespeichert", description: "Username wurde aktualisiert." });
+      toast({
+        title: t("success"),
+        description: t("usernameUpdated"),
+      });
       onClose();
     } catch (err: any) {
       toast({
-        title: "Error",
-        description: err?.message || "Profil konnte nicht gespeichert werden",
+        title: t("error"),
+        description: err?.message || t("profileSaveError"),
         variant: "destructive",
       });
     } finally {
@@ -81,13 +94,16 @@ export default function SettingsModal({ currentUser, onClose, onUpdateUser }: Se
   const handleDeleteProfile = async () => {
     const token = getToken();
     if (!token) {
-      toast({ title: "Error", description: "Token fehlt – bitte neu einloggen.", variant: "destructive" });
+      toast({
+        title: t("error"),
+        description: t("tokenMissing"),
+        variant: "destructive",
+      });
       return;
     }
 
-    const ok = window.confirm(
-      "Willst du dein Profil wirklich löschen?\n\nDas löscht:\n- deinen User\n- alle Chats\n- alle Nachrichten\n\nDein Username wird danach wieder frei."
-    );
+    // Confirm in allen Sprachen (Key muss in i18n vorhanden sein)
+    const ok = window.confirm(t("deleteAccountConfirm"));
     if (!ok) return;
 
     setIsDeleting(true);
@@ -99,7 +115,7 @@ export default function SettingsModal({ currentUser, onClose, onUpdateUser }: Se
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.ok) {
-        throw new Error(data?.message || "Profil konnte nicht gelöscht werden");
+        throw new Error(data?.message || t("accountDeleteError"));
       }
 
       try {
@@ -107,13 +123,16 @@ export default function SettingsModal({ currentUser, onClose, onUpdateUser }: Se
         localStorage.removeItem("token");
       } catch {}
 
-      toast({ title: "Profil gelöscht", description: "Dein Profil und Inhalte wurden gelöscht." });
+      toast({
+        title: t("accountDeleted"),
+        description: t("accountDeletedDesc"),
+      });
 
       window.location.href = "/";
     } catch (err: any) {
       toast({
-        title: "Error",
-        description: err?.message || "Profil konnte nicht gelöscht werden",
+        title: t("error"),
+        description: err?.message || t("accountDeleteError"),
         variant: "destructive",
       });
     } finally {
@@ -126,7 +145,10 @@ export default function SettingsModal({ currentUser, onClose, onUpdateUser }: Se
       <DialogContent className="bg-surface border-border w-[calc(100vw-24px)] sm:max-w-2xl max-h-[85dvh] overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
           <div className="flex items-center justify-between gap-3">
-            <DialogTitle className="text-2xl font-bold text-text-primary">Einstellungen</DialogTitle>
+            <DialogTitle className="text-2xl font-bold text-text-primary">
+              {t("settingsTitle")}
+            </DialogTitle>
+
             <Button variant="ghost" size="sm" onClick={onClose} className="text-text-muted hover:text-text-primary">
               <X className="w-4 h-4" />
             </Button>
@@ -136,7 +158,7 @@ export default function SettingsModal({ currentUser, onClose, onUpdateUser }: Se
         <div className="space-y-8">
           {/* Profil */}
           <div>
-            <h3 className="text-lg font-semibold text-text-primary mb-4">Profil</h3>
+            <h3 className="text-lg font-semibold text-text-primary mb-4">{t("profile")}</h3>
 
             <div className="space-y-4">
               <div className="flex items-start sm:items-center gap-4">
@@ -145,11 +167,14 @@ export default function SettingsModal({ currentUser, onClose, onUpdateUser }: Se
                 </div>
 
                 <div className="flex-1 min-w-0">
-                  <label className="block text-sm font-medium text-text-primary mb-2">Username</label>
+                  <label className="block text-sm font-medium text-text-primary mb-2">
+                    {t("usernameLabel")}
+                  </label>
+
                   <Input
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder="Neuer Username"
+                    placeholder={t("enterNewUsername")}
                     className="!bg-surface !text-text-primary !border-border"
                   />
                 </div>
@@ -157,12 +182,12 @@ export default function SettingsModal({ currentUser, onClose, onUpdateUser }: Se
 
               <div className="flex flex-col sm:flex-row gap-3">
                 <Button onClick={handleSaveProfile} className="w-full" disabled={isSaving}>
-                  {isSaving ? "Speichern..." : "Profil speichern"}
+                  {isSaving ? t("saving") : t("saveProfile")}
                 </Button>
 
                 <Button onClick={handleDeleteProfile} variant="destructive" className="w-full" disabled={isDeleting}>
                   <Trash2 className="w-4 h-4 mr-2" />
-                  {isDeleting ? "Löschen..." : "Profil löschen"}
+                  {isDeleting ? t("deleting") : t("deleteAccount")}
                 </Button>
               </div>
             </div>
@@ -170,7 +195,7 @@ export default function SettingsModal({ currentUser, onClose, onUpdateUser }: Se
 
           {/* Sprache */}
           <div>
-            <h3 className="text-lg font-semibold text-text-primary mb-4">Sprache</h3>
+            <h3 className="text-lg font-semibold text-text-primary mb-4">{t("language")}</h3>
             <div className="flex justify-start">
               <LanguageSelector />
             </div>
@@ -178,10 +203,8 @@ export default function SettingsModal({ currentUser, onClose, onUpdateUser }: Se
 
           {/* About */}
           <div>
-            <h3 className="text-lg font-semibold text-text-primary mb-4">About</h3>
-            <div className="text-sm text-text-muted">
-              VelumChat – end-to-end encrypted messaging.
-            </div>
+            <h3 className="text-lg font-semibold text-text-primary mb-4">{t("about")}</h3>
+            <div className="text-sm text-text-muted">{t("aboutText")}</div>
           </div>
         </div>
       </DialogContent>
