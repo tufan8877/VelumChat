@@ -3,10 +3,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LanguageSelector } from "@/components/ui/language-selector";
+import { useLanguage } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { X, UserRound, Trash2 } from "lucide-react";
 import type { User } from "@shared/schema";
-import { useLanguage } from "@/lib/i18n";
 
 interface SettingsModalProps {
   currentUser: User & { privateKey: string; token?: string };
@@ -36,21 +36,13 @@ export default function SettingsModal({ currentUser, onClose, onUpdateUser }: Se
   const handleSaveProfile = async () => {
     const newName = String(username || "").trim();
     if (!newName) {
-      toast({
-        title: t("error"),
-        description: t("usernameEmpty"),
-        variant: "destructive",
-      });
+      toast({ title: t("error"), description: t("usernameEmpty"), variant: "destructive" });
       return;
     }
 
     const token = getToken();
     if (!token) {
-      toast({
-        title: t("error"),
-        description: t("tokenMissing"),
-        variant: "destructive",
-      });
+      toast({ title: t("error"), description: t("tokenMissing"), variant: "destructive" });
       return;
     }
 
@@ -91,15 +83,10 @@ export default function SettingsModal({ currentUser, onClose, onUpdateUser }: Se
   const handleDeleteProfile = async () => {
     const token = getToken();
     if (!token) {
-      toast({
-        title: t("error"),
-        description: t("tokenMissing"),
-        variant: "destructive",
-      });
+      toast({ title: t("error"), description: t("tokenMissing"), variant: "destructive" });
       return;
     }
 
-    // ✅ i18n Confirm (alle Sprachen)
     const ok = window.confirm(t("deleteAccountConfirm"));
     if (!ok) return;
 
@@ -120,10 +107,7 @@ export default function SettingsModal({ currentUser, onClose, onUpdateUser }: Se
         localStorage.removeItem("token");
       } catch {}
 
-      toast({
-        title: t("accountDeleted"),
-        description: t("accountDeletedDesc"),
-      });
+      toast({ title: t("success"), description: t("accountDeleted") });
 
       window.location.href = "/";
     } catch (err: any) {
@@ -142,9 +126,7 @@ export default function SettingsModal({ currentUser, onClose, onUpdateUser }: Se
       <DialogContent className="bg-surface border-border w-[calc(100vw-24px)] sm:max-w-2xl max-h-[85dvh] overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
           <div className="flex items-center justify-between gap-3">
-            <DialogTitle className="text-2xl font-bold text-text-primary">
-              {t("settingsTitle")}
-            </DialogTitle>
+            <DialogTitle className="text-2xl font-bold text-text-primary">{t("settingsTitle")}</DialogTitle>
             <Button variant="ghost" size="sm" onClick={onClose} className="text-text-muted hover:text-text-primary">
               <X className="w-4 h-4" />
             </Button>
@@ -163,13 +145,11 @@ export default function SettingsModal({ currentUser, onClose, onUpdateUser }: Se
                 </div>
 
                 <div className="flex-1 min-w-0">
-                  <label className="block text-sm font-medium text-text-primary mb-2">
-                    {t("usernameLabel")}
-                  </label>
+                  <label className="block text-sm font-medium text-text-primary mb-2">{t("usernameLabel")}</label>
                   <Input
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder={t("enterNewUsername")}
+                    placeholder={t("newUsername")}
                     className="!bg-surface !text-text-primary !border-border"
                   />
                 </div>
