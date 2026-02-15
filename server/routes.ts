@@ -204,6 +204,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return safeJson(res, 409, { ok: false, message: "Username already exists" });
       }
 
+      // Requires storage.updateUsername (recommended)
       const s: any = storage as any;
       let updated: any = null;
 
@@ -212,6 +213,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else if (typeof s.updateUser === "function") {
         updated = await s.updateUser(userIdParam, { username });
       } else {
+        // fallback: try to fetch user if no return
         throw new Error("Storage missing updateUsername/updateUser. Add updateUsername to storage.");
       }
 
