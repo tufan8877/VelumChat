@@ -14,7 +14,7 @@ import {
 } from "@shared/schema";
 
 import { db } from "./db";
-import { eq, and, or, desc, asc, sql, ne, isNull } from "drizzle-orm";
+import { eq, and, or, desc, asc, sql, ne, isNull, inArray } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -81,7 +81,11 @@ class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  // ✅ HARD DELETE: user + all associated data
+  /**
+   * ✅ HARD DELETE account + all related rows
+   * Fix for Postgres error: malformed array literal: "42"
+   * We use inArray() instead of raw ANY() SQL.
+   */
   async deleteUserAccount(userId: number): Promise<void> {
     await db.transaction(async (tx) => {
       // delete per-user flags
@@ -102,7 +106,7 @@ class DatabaseStorage implements IStorage {
 
       // delete all messages in those chats
       if (chatIds.length > 0) {
-        await tx.delete(messages).where(sql`${messages.chatId} = ANY(${chatIds})`);
+        await tx.delete(messages).where(inArray(messages.chatId, chatIds));
       }
 
       // delete chats
