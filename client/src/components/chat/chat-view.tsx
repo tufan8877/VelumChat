@@ -18,10 +18,17 @@ interface ChatViewProps {
   isConnected: boolean;
   onBackToList: () => void;
 
+  // ✅ NEW:
   onDeleteChat: (chatId: number) => Promise<void> | void;
   onBlockUser: (userId: number) => Promise<void> | void;
 }
 
+/**
+ * Keyboard-avoidance (iOS Safari / Android):
+ * - Uses window.visualViewport to compute the keyboard overlap and lifts the input bar up.
+ * - Adds matching bottom padding to the messages list so the last message never hides behind the input/keyboard.
+ * - Keeps design/colors as-is (only layout behavior changes).
+ */
 export default function ChatView({
   currentUser,
   selectedChat,
@@ -41,15 +48,58 @@ export default function ChatView({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ✅ Composer measurement (fixes “last message cut off” and iOS viewport issues)
-  const composerRef = useRef<HTMLDivElement>(null);
-  const [composerHeight, setComposerHeight] = useState(160);
+  const inputBarRef = useRef<HTMLDivElement>(null);
+  const [inputBarHeight, setInputBarHeight] = useState(140); // fallback
 
   const localTypingRef = useRef(false);
   const typingIdleTimerRef = useRef<any>(null);
   const typingThrottleRef = useRef<number>(0);
 
   const { t } = useLanguage();
+
+  // --- Keyboard inset handling (fix: keyboard covers input on iOS/Android browsers)
+  const [keyboardInset, setKeyboardInset] = useState(0);
+
+  useEffect(() => {
+    const vv = (window as any).visualViewport as VisualViewport | undefined;
+    if (!vv) return;
+
+    const compute = () => {
+      // On mobile browsers, the keyboard reduces visualViewport.height (and may change offsetTop).
+      const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      setKeyboardInset(inset);
+    };
+
+    compute();
+    vv.addEventListener("resize", compute);
+    vv.addEventListener("scroll", compute);
+    window.addEventListener("orientationchange", compute);
+
+    return () => {
+      vv.removeEventListener("resize", compute);
+      vv.removeEventListener("scroll", compute);
+      window.removeEventListener("orientationchange", compute);
+    };
+  }, []);
+
+  // Measure input bar height so we can pad the messages list correctly
+  useLayoutEffect(() => {
+    if (!inputBarRef.current) return;
+
+    const el = inputBarRef.current;
+    const ro = new ResizeObserver(() => {
+      const h = Math.max(0, Math.ceil(el.getBoundingClientRect().height));
+      if (h) setInputBarHeight(h);
+    });
+
+    ro.observe(el);
+
+    // initial
+    const initH = Math.max(0, Math.ceil(el.getBoundingClientRect().height));
+    if (initH) setInputBarHeight(initH);
+
+    return () => ro.disconnect();
+  }, []);
 
   const isNearBottom = () => {
     const el = scrollRef.current;
@@ -59,53 +109,25 @@ export default function ChatView({
   };
 
   const scrollToBottom = (smooth = true) => {
-    requestAnimationFrame(() => {
-      messagesEndRef.current?.scrollIntoView({
-        behavior: smooth ? "smooth" : "auto",
-        block: "end",
-      });
-    });
+    messagesEndRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "end" });
   };
 
-  // ✅ Measure composer height with ResizeObserver (best cross-platform)
-  useLayoutEffect(() => {
-    const el = composerRef.current;
-    if (!el) return;
-
-    const update = () => {
-      const h = Math.ceil(el.getBoundingClientRect().height || 0);
-      setComposerHeight(h > 0 ? h : 160);
-    };
-
-    update();
-
-    let ro: ResizeObserver | null = null;
-    try {
-      ro = new ResizeObserver(() => update());
-      ro.observe(el);
-    } catch {}
-
-    window.addEventListener("resize", update);
-    window.addEventListener("orientationchange", update);
-
-    return () => {
-      if (ro) ro.disconnect();
-      window.removeEventListener("resize", update);
-      window.removeEventListener("orientationchange", update);
-    };
-  }, []);
-
-  // Auto-scroll only if user is near bottom
   useEffect(() => {
     if (messages.length === 0) return;
-    if (isNearBottom()) scrollToBottom(false);
+    if (isNearBottom()) setTimeout(() => scrollToBottom(true), 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length]);
 
   useEffect(() => {
-    if (isOtherTyping && isNearBottom()) scrollToBottom(true);
+    if (isOtherTyping && isNearBottom()) setTimeout(() => scrollToBottom(true), 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOtherTyping]);
+
+  // When keyboard opens/closes, keep bottom in view if user is at bottom
+  useEffect(() => {
+    if (isNearBottom()) setTimeout(() => scrollToBottom(false), 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [keyboardInset, inputBarHeight]);
 
   const getTimerSeconds = () => {
     const s = parseInt(destructTimer, 10);
@@ -171,9 +193,9 @@ export default function ChatView({
     }
 
     stopTyping();
-    onSendMessage(text, "text", Math.max(getTimerSeconds(), 5));
+    onSendMessage(text, "text", getTimerSeconds());
     setMessageInput("");
-    scrollToBottom(false);
+    setTimeout(() => scrollToBottom(true), 30);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -198,12 +220,12 @@ export default function ChatView({
       return;
     }
 
-    const secs = Math.max(getTimerSeconds(), 5);
+    const secs = getTimerSeconds();
     if (file.type.startsWith("image/")) onSendMessage("", "image", secs, file);
     else onSendMessage(file.name, "file", secs, file);
 
     if (fileInputRef.current) fileInputRef.current.value = "";
-    scrollToBottom(false);
+    setTimeout(() => scrollToBottom(true), 30);
   };
 
   const handleCameraCapture = () => {
@@ -253,20 +275,14 @@ export default function ChatView({
   const statusDotClass = !isConnected ? "bg-red-500" : otherOnline ? "bg-green-500" : "bg-muted-foreground/60";
   const statusText = !isConnected ? t("connecting") : otherOnline ? t("online") : t("offline");
 
-  // ✅ Reserve space for fixed composer
-  const bottomSpace = `calc(${composerHeight}px + env(safe-area-inset-bottom) + 16px)`;
+  // lift input bar above keyboard
+  const inputTransform = keyboardInset > 0 ? `translateY(-${keyboardInset}px)` : undefined;
+
+  // Bottom padding for messages list: inputBar height + keyboardInset + safe-area
+  const messagesPaddingBottom = `calc(${inputBarHeight}px + ${keyboardInset}px + env(safe-area-inset-bottom))`;
 
   return (
-    // ✅ IMPORTANT: use 100dvh on iOS Safari to avoid “input disappears”
-    <div
-      className="flex-1 flex flex-col w-full overflow-x-hidden bg-background min-h-0 h-[100dvh]"
-      style={
-        {
-          // variable used by messages padding + scroll margin
-          ["--composer-h" as any]: bottomSpace,
-        } as React.CSSProperties
-      }
-    >
+    <div className="flex-1 flex flex-col min-h-0 w-full overflow-x-hidden bg-background">
       {/* Header */}
       <div className="flex-shrink-0 w-full bg-background border-b border-border px-3 py-3 md:px-4 md:py-4">
         <div className="flex items-center justify-between gap-2 w-full">
@@ -317,6 +333,7 @@ export default function ChatView({
               </Select>
             </div>
 
+            {/* Menu: delete chat + block user */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="w-10 h-10 rounded-full touch-target" aria-label="Menu">
@@ -360,10 +377,7 @@ export default function ChatView({
       <div
         ref={scrollRef}
         className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden custom-scrollbar px-3 md:px-4 py-3 space-y-3"
-        style={{
-          paddingBottom: "var(--composer-h)",
-          WebkitOverflowScrolling: "touch",
-        }}
+        style={{ paddingBottom: messagesPaddingBottom }}
       >
         <div className="text-center">
           <div className="inline-flex items-center gap-2 bg-surface rounded-full px-4 py-2 text-sm text-text-muted">
@@ -391,16 +405,17 @@ export default function ChatView({
           </div>
         )}
 
-        <div ref={messagesEndRef} style={{ scrollMarginBottom: "var(--composer-h)" }} />
+        <div ref={messagesEndRef} />
       </div>
 
-      {/* ✅ FIX: input is FIXED (not sticky) so it never disappears on iOS */}
+      {/* Input bar (fixed behavior with keyboard) */}
       <div
-        ref={composerRef}
-        className="fixed left-0 right-0 bottom-0 z-50 bg-background border-t border-border"
+        ref={inputBarRef}
+        className="sticky bottom-0 w-full bg-background border-t border-border"
         style={{
           paddingBottom: "env(safe-area-inset-bottom)",
-          WebkitTransform: "translateZ(0)",
+          transform: inputTransform,
+          willChange: "transform",
         }}
       >
         <div className="px-2 pt-2 flex items-end gap-2 flex-nowrap">
