@@ -190,7 +190,7 @@ export const translations = {
     encryptionInfo: "All messages use RSA-2048 end-to-end encryption. Private keys are generated locally and never transmitted to our servers.",
     serverInfo: "Server Information",
     howItWorks: "How It Works",
-    serverExplanation: "Whispergram uses a minimal server architecture designed for maximum privacy:",
+    serverExplanation: "VelumChat uses a minimal server architecture designed for maximum privacy:",
     serverPoint1: "WebSocket connections for real-time messaging without data persistence",
     serverPoint2: "Temporary message routing - messages are deleted immediately after delivery",
     serverPoint3: "No user databases - only temporary session management",
