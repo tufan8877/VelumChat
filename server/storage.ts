@@ -24,6 +24,9 @@ export interface IStorage {
   updateUserOnlineStatus(id: number, isOnline: boolean): Promise<void>;
   updateUsername(id: number, username: string): Promise<User>;
 
+  // Account deletion
+  deleteAccount(userId: number): Promise<void>;
+
   // Messages
   createMessage(message: InsertMessage & { expiresAt: Date }): Promise<Message>;
   getMessagesByChat(chatId: number): Promise<Message[]>;
@@ -78,6 +81,31 @@ class DatabaseStorage implements IStorage {
     return updated;
   }
 
+  // ✅ Full account deletion (user + related rows)
+  async deleteAccount(userId: number): Promise<void> {
+    // Use a transaction if available; if not, sequential deletes still work.
+    const run = (db as any).transaction
+      ? (db as any).transaction.bind(db)
+      : async (fn: (tx: any) => Promise<void>) => fn(db);
+
+    await run(async (tx: any) => {
+      // Remove messages involving the user
+      await tx.delete(messages).where(or(eq(messages.senderId, userId), eq(messages.receiverId, userId)));
+
+      // Remove per-user chat delete markers
+      await tx.delete(deletedChats).where(eq(deletedChats.userId, userId));
+
+      // Remove blocks involving the user
+      await tx.delete(blockedUsers).where(or(eq(blockedUsers.blockerId, userId), eq(blockedUsers.blockedId, userId)));
+
+      // Remove chats involving the user
+      await tx.delete(chats).where(or(eq(chats.participant1Id, userId), eq(chats.participant2Id, userId)));
+
+      // Finally remove the user
+      await tx.delete(users).where(eq(users.id, userId));
+    });
+  }
+
   async createMessage(message: InsertMessage & { expiresAt: Date }): Promise<Message> {
     const [msg] = await db.insert(messages).values(message as any).returning();
     return msg;
@@ -87,53 +115,10 @@ class DatabaseStorage implements IStorage {
     return await db.select().from(messages).where(eq(messages.chatId, chatId)).orderBy(asc(messages.createdAt));
   }
 
-  /**
-   * ✅ Deletes expired messages AND fixes chats.lastMessageId / chats.lastMessageTimestamp
-   * so the chat list preview never shows an already-expired last message.
-   */
   async deleteExpiredMessages(): Promise<number> {
     const now = new Date();
-
-    // 1) find chats whose lastMessage is already expired
-    const affected = await db
-      .select({ chatId: chats.id })
-      .from(chats)
-      .innerJoin(messages, eq(messages.id, chats.lastMessageId))
-      .where(sql`${messages.expiresAt} < ${now}`);
-
-    const affectedChatIds = Array.from(new Set(affected.map((r) => r.chatId)));
-
-    // 2) delete expired messages
     const result: any = await db.delete(messages).where(sql`${messages.expiresAt} < ${now}`);
-    const deletedCount = (result?.rowCount ?? result?.changes ?? 0) as number;
-
-    if (affectedChatIds.length === 0) return deletedCount;
-
-    // 3) recompute last message per affected chat
-    for (const chatId of affectedChatIds) {
-      const [last] = await db
-        .select({ id: messages.id, createdAt: messages.createdAt })
-        .from(messages)
-        .where(eq(messages.chatId, chatId))
-        .orderBy(desc(messages.createdAt))
-        .limit(1);
-
-      if (last?.id) {
-        await db
-          .update(chats)
-          .set({ lastMessageId: last.id as any, lastMessageTimestamp: last.createdAt as any } as any)
-          .where(eq(chats.id, chatId));
-      } else {
-        // no messages left -> keep ordering stable by falling back to chat.createdAt
-        const [c] = await db.select({ createdAt: chats.createdAt }).from(chats).where(eq(chats.id, chatId));
-        await db
-          .update(chats)
-          .set({ lastMessageId: null as any, lastMessageTimestamp: (c?.createdAt ?? now) as any } as any)
-          .where(eq(chats.id, chatId));
-      }
-    }
-
-    return deletedCount;
+    return (result?.rowCount ?? result?.changes ?? 0) as number;
   }
 
   async createChat(chat: InsertChat): Promise<Chat> {
