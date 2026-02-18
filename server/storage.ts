@@ -14,7 +14,7 @@ import {
 } from "@shared/schema";
 
 import { db } from "./db";
-import { eq, and, or, desc, asc, sql, ne, isNull, gt } from "drizzle-orm";
+import { eq, and, or, desc, asc, sql, ne, isNull } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -23,6 +23,9 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
   updateUserOnlineStatus(id: number, isOnline: boolean): Promise<void>;
   updateUsername(id: number, username: string): Promise<User>;
+
+  // Account deletion
+  deleteAccount(userId: number): Promise<void>;
 
   // Messages
   createMessage(message: InsertMessage & { expiresAt: Date }): Promise<Message>;
@@ -78,19 +81,38 @@ class DatabaseStorage implements IStorage {
     return updated;
   }
 
+  // ✅ Full account deletion (user + related rows)
+  async deleteAccount(userId: number): Promise<void> {
+    // Use a transaction if available; if not, sequential deletes still work.
+    const run = (db as any).transaction
+      ? (db as any).transaction.bind(db)
+      : async (fn: (tx: any) => Promise<void>) => fn(db);
+
+    await run(async (tx: any) => {
+      // Remove messages involving the user
+      await tx.delete(messages).where(or(eq(messages.senderId, userId), eq(messages.receiverId, userId)));
+
+      // Remove per-user chat delete markers
+      await tx.delete(deletedChats).where(eq(deletedChats.userId, userId));
+
+      // Remove blocks involving the user
+      await tx.delete(blockedUsers).where(or(eq(blockedUsers.blockerId, userId), eq(blockedUsers.blockedId, userId)));
+
+      // Remove chats involving the user
+      await tx.delete(chats).where(or(eq(chats.participant1Id, userId), eq(chats.participant2Id, userId)));
+
+      // Finally remove the user
+      await tx.delete(users).where(eq(users.id, userId));
+    });
+  }
+
   async createMessage(message: InsertMessage & { expiresAt: Date }): Promise<Message> {
     const [msg] = await db.insert(messages).values(message as any).returning();
     return msg;
   }
 
-  // ✅ Only return NOT-expired messages (prevents “flash” when reopening a chat)
   async getMessagesByChat(chatId: number): Promise<Message[]> {
-    const now = new Date();
-    return await db
-      .select()
-      .from(messages)
-      .where(and(eq(messages.chatId, chatId), gt(messages.expiresAt, now)))
-      .orderBy(asc(messages.createdAt));
+    return await db.select().from(messages).where(eq(messages.chatId, chatId)).orderBy(asc(messages.createdAt));
   }
 
   async deleteExpiredMessages(): Promise<number> {
@@ -107,8 +129,6 @@ class DatabaseStorage implements IStorage {
   async getChatsByUserId(
     userId: number
   ): Promise<Array<Chat & { otherUser: User; lastMessage?: Message; unreadCount: number }>> {
-    const now = new Date();
-
     const rows = await db
       .select({
         chat: chats,
@@ -124,8 +144,7 @@ class DatabaseStorage implements IStorage {
           and(eq(chats.participant2Id, userId), eq(users.id, chats.participant1Id))
         )
       )
-      // ✅ only attach lastMessage if it is not expired
-      .leftJoin(messages, and(eq(messages.id, chats.lastMessageId), gt(messages.expiresAt, now)))
+      .leftJoin(messages, eq(messages.id, chats.lastMessageId))
       .leftJoin(deletedChats, and(eq(deletedChats.chatId, chats.id), eq(deletedChats.userId, userId)))
       .where(and(or(eq(chats.participant1Id, userId), eq(chats.participant2Id, userId)), isNull(deletedChats.id)))
       .orderBy(desc(chats.lastMessageTimestamp), desc(chats.createdAt));
