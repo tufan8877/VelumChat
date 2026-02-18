@@ -88,6 +88,20 @@ export default function WhatsAppSidebar({
   const [searchQuery, setSearchQuery] = useState("");
   const [showNewChatDialog, setShowNewChatDialog] = useState(false);
 
+  // If the server deletes expired messages, the chat list can still temporarily
+  // contain the previous lastMessage in local state. We treat already-expired
+  // lastMessage previews as "no last message" to avoid showing ghost previews.
+  const isExpiredMessage = (m: any) => {
+    try {
+      if (!m) return false;
+      const exp = (m as any).expiresAt;
+      if (!exp) return false;
+      return new Date(exp).getTime() <= Date.now();
+    } catch {
+      return false;
+    }
+  };
+
   const handleLogout = () => {
     window.location.href = "/";
   };
@@ -203,7 +217,8 @@ export default function WhatsAppSidebar({
                 const badgeText = finalUnreadCount > 9 ? "9+" : String(finalUnreadCount);
 
                 const isTyping = Boolean(typingByChat?.get(chat.id));
-                const timeText = chat.lastMessage ? formatLastMessageTime(chat.lastMessage.createdAt) : "";
+                const lastMessage = isExpiredMessage(chat.lastMessage) ? undefined : chat.lastMessage;
+                const timeText = lastMessage ? formatLastMessageTime(lastMessage.createdAt) : "";
 
                 const isOnline = toBool((chat as any)?.otherUser?.isOnline);
 
@@ -268,8 +283,8 @@ export default function WhatsAppSidebar({
                                 <div className="typing-dot" style={{ animationDelay: "0.2s" }} />
                               </div>
                             </div>
-                          ) : chat.lastMessage ? (
-                            <p className="text-sm text-muted-foreground truncate flex-1">{chat.lastMessage.content}</p>
+                          ) : lastMessage ? (
+                            <p className="text-sm text-muted-foreground truncate flex-1">{lastMessage.content}</p>
                           ) : (
                             <p className="text-sm text-muted-foreground/70 italic flex items-center gap-1">
                               <KeyRound className="w-3 h-3" />
