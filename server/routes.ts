@@ -289,6 +289,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // If either side blocked the other, do not allow starting/creating a chat
+      try {
+        const blocked = await storage.isEitherBlocked(participant1Id, participant2Id);
+        if (blocked) {
+          return safeJson(res, 403, { ok: false, message: "User is blocked" });
+        }
+      } catch {}
+
       const chat = await storage.getOrCreateChatByParticipants(participant1Id, participant2Id);
 
       try {
@@ -589,6 +597,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
               ws.send(JSON.stringify({ type: "error", message: "Missing receiverId" }));
               return;
             }
+
+            // If either side blocked the other, do not deliver or create messages
+            try {
+              const blocked = await storage.isEitherBlocked(senderId, receiverId);
+              if (blocked) {
+                ws.send(JSON.stringify({ type: "error", message: "User is blocked" }));
+                return;
+              }
+            } catch {}
 
             const chat = await storage.getOrCreateChatByParticipants(senderId, receiverId);
 
