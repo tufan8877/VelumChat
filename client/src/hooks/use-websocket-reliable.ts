@@ -68,8 +68,18 @@ export function useWebSocketReliable(userId?: number) {
       wsRef.current.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          // emit specific event
-          if (data?.type) emit(data.type, data);
+
+          // Emit specific event by server type
+          if (data?.type) {
+            emit(data.type, data);
+
+            // Backward-compat: some parts of the app expect "message" events
+            // while the server emits "new_message".
+            if (data.type === "new_message") {
+              // normalize shape to what older handlers expect
+              emit("message", data);
+            }
+          }
           // emit general
           emit("message", data);
         } catch (e) {
