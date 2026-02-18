@@ -49,6 +49,8 @@ export interface IStorage {
 
   // Block / Delete chat
   blockUser(blockerId: number, blockedId: number): Promise<void>;
+  isBlocked(blockerId: number, blockedId: number): Promise<boolean>;
+  isEitherBlocked(userA: number, userB: number): Promise<boolean>;
   deleteChatForUser(userId: number, chatId: number): Promise<void>;
   getDeletedAtForUserChat(userId: number, chatId: number): Promise<Date | null>;
 
@@ -225,6 +227,29 @@ class DatabaseStorage implements IStorage {
 
   async blockUser(blockerId: number, blockedId: number): Promise<void> {
     await db.insert(blockedUsers).values({ blockerId, blockedId } as any).onConflictDoNothing();
+  }
+
+  async isBlocked(blockerId: number, blockedId: number): Promise<boolean> {
+    const rows = await db
+      .select({ id: blockedUsers.id })
+      .from(blockedUsers)
+      .where(and(eq(blockedUsers.blockerId, blockerId), eq(blockedUsers.blockedId, blockedId)))
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  async isEitherBlocked(userA: number, userB: number): Promise<boolean> {
+    const rows = await db
+      .select({ id: blockedUsers.id })
+      .from(blockedUsers)
+      .where(
+        or(
+          and(eq(blockedUsers.blockerId, userA), eq(blockedUsers.blockedId, userB)),
+          and(eq(blockedUsers.blockerId, userB), eq(blockedUsers.blockedId, userA))
+        )
+      )
+      .limit(1);
+    return rows.length > 0;
   }
 
   async deleteChatForUser(userId: number, chatId: number): Promise<void> {
