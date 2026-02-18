@@ -1,4 +1,3 @@
-// server/routes.ts
 import type { Express } from "express";
 import express from "express";
 import { createServer, type Server } from "http";
@@ -99,6 +98,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   }
 
+  // Helper: ensure a WS connection is "joined" (token->userId).
+  // This makes the server robust even if the client forgets to send a join message on some flows.
+  async function ensureJoined(ws: any, tokenMaybe: any): Promise<number | null> {
+    if ((ws as any).__joinedUserId) return (ws as any).__joinedUserId as number;
+
+    const token = typeof tokenMaybe === "string" ? tokenMaybe.trim() : "";
+    if (!token) return null;
+
+    let payload: JwtPayload;
+    try {
+      payload = verifyToken(token);
+    } catch {
+      return null;
+    }
+
+    const userId = payload.userId;
+    (ws as any).__joinedUserId = userId;
+
+    connectedClients.set(userId, { ws, userId });
+    try {
+      await storage.updateUserOnlineStatus(userId, true);
+    } catch {}
+
+    // send initial online list (for clients that rely on it)
+    try {
+      const onlineUserIds = Array.from(connectedClients.keys());
+      ws.send(JSON.stringify({ type: "online_users", userIds: onlineUserIds }));
+    } catch {}
+
+    // broadcast status
+    broadcast({ type: "user_status", userId, isOnline: true }, userId);
+
+    return userId;
+  }
+
   // ============================
   // REST API
   // ============================
@@ -181,6 +215,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ✅ Update username (auth, only self) + WS broadcast
+  app.patch("/api/users/:userId", requireAuth, async (req: any, res) => {
+    try {
+      const userIdParam = toInt(req.params.userId, 0);
+      if (!userIdParam) return safeJson(res, 400, { ok: false, message: "Invalid userId" });
+
+      if (userIdParam !== req.auth.userId) {
+        return safeJson(res, 403, { ok: false, message: "Forbidden" });
+      }
+
+      const username = String(req.body?.username || "").trim();
+      if (!username) return safeJson(res, 400, { ok: false, message: "Username required" });
+      if (username.length < 2 || username.length > 24) {
+        return safeJson(res, 400, { ok: false, message: "Username length must be 2–24" });
+      }
+      if (!/^[a-zA-Z0-9_ .-]+$/.test(username)) {
+        return safeJson(res, 400, { ok: false, message: "Username contains invalid characters" });
+      }
+
+      const existing = await storage.getUserByUsername(username);
+      if (existing && (existing as any).id !== userIdParam) {
+        return safeJson(res, 409, { ok: false, message: "Username already exists" });
+      }
+
+      // Requires storage.updateUsername (recommended)
+      const s: any = storage as any;
+      let updated: any = null;
+
+      if (typeof s.updateUsername === "function") {
+        updated = await s.updateUsername(userIdParam, username);
+      } else if (typeof s.updateUser === "function") {
+        updated = await s.updateUser(userIdParam, { username });
+      } else {
+        // fallback: try to fetch user if no return
+        throw new Error("Storage missing updateUsername/updateUser. Add updateUsername to storage.");
+      }
+
+      broadcast({ type: "profile_updated", userId: userIdParam, username });
+
+      return res.json({
+        ok: true,
+        user: updated ? { id: updated.id, username: updated.username } : { id: userIdParam, username },
+      });
+    } catch (err: any) {
+      console.error("UPDATE USERNAME ERROR:", err);
+      return safeJson(res, 500, { ok: false, message: err?.message || "Failed to update username" });
+    }
+  });
+
   // ---- Protected endpoints ----
 
   app.get("/api/search-users", requireAuth, async (req: any, res) => {
@@ -240,7 +323,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Messages (server filters deletedAt + expiresAt)
+  // Messages (server filters deletedAt)
   app.get("/api/chats/:chatId/messages", requireAuth, async (req: any, res) => {
     try {
       const chatId = toInt(req.params.chatId, 0);
@@ -249,17 +332,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userIdParam = req.auth.userId;
 
       const deletedAt = await storage.getDeletedAtForUserChat(userIdParam, chatId);
-
-      // ✅ storage already filters expiresAt, but we keep an extra guard here
       const msgs = await storage.getMessagesByChat(chatId);
-      const now = Date.now();
 
-      const filtered = msgs
-        .filter((m: any) => !m.expiresAt || new Date(m.expiresAt).getTime() > now)
-        .filter((m: any) => {
-          if (!deletedAt) return true;
-          return new Date(m.createdAt).getTime() > new Date(deletedAt).getTime();
-        });
+      const filtered = deletedAt
+        ? msgs.filter((m: any) => new Date(m.createdAt).getTime() > new Date(deletedAt).getTime())
+        : msgs;
 
       return res.json(filtered);
     } catch (err) {
@@ -378,8 +455,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       .filter(Boolean);
     for (const o of extra) allowedOrigins.add(o);
 
-    const forwardedHost =
-      (req.headers["x-forwarded-host"] as string | undefined) || req.headers.host;
+    const forwardedHost = (req.headers["x-forwarded-host"] as string | undefined) || req.headers.host;
 
     let sameHost = false;
     if (origin && forwardedHost) {
@@ -399,9 +475,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     // IP limit
     const xff = req.headers["x-forwarded-for"];
     const ip =
-      typeof xff === "string" && xff.length > 0
-        ? xff.split(",")[0].trim()
-        : req.socket?.remoteAddress || "unknown";
+      typeof xff === "string" && xff.length > 0 ? xff.split(",")[0].trim() : req.socket?.remoteAddress || "unknown";
 
     const curr = ipConnCount.get(ip) ?? 0;
     if (curr >= MAX_CONNS_PER_IP) {
@@ -419,8 +493,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     ws.isAlive = true;
     ws.on("pong", () => (ws.isAlive = true));
 
-    let joinedUserId: number | null = null;
-
     ws.send(JSON.stringify({ type: "connection_established", ok: true }));
 
     ws.on("message", async (data: any) => {
@@ -434,54 +506,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return;
         }
 
-        // ✅ JOIN
+        // 1) Explicit join
         if (parsed?.type === "join") {
           const token = String(parsed?.token || "");
-          if (!token) {
-            ws.send(JSON.stringify({ type: "error", message: "Missing token" }));
-            return;
-          }
-
-          let payload: JwtPayload;
-          try {
-            payload = verifyToken(token);
-          } catch {
+          const joined = await ensureJoined(ws, token);
+          if (!joined) {
             ws.send(JSON.stringify({ type: "error", message: "Invalid token" }));
             return;
           }
-
-          joinedUserId = payload.userId;
-          connectedClients.set(joinedUserId, { ws, userId: joinedUserId });
-          await storage.updateUserOnlineStatus(joinedUserId, true);
-
-          ws.send(JSON.stringify({ type: "join_confirmed", ok: true, userId: joinedUserId }));
-
-          // ✅ Initial list of online users
-          const onlineUserIds = Array.from(connectedClients.keys());
-          ws.send(JSON.stringify({ type: "online_users", userIds: onlineUserIds }));
-
-          // ✅ Broadcast user online
-          broadcast({ type: "user_status", userId: joinedUserId, isOnline: true }, joinedUserId);
-
+          ws.send(JSON.stringify({ type: "join_confirmed", ok: true, userId: joined }));
           return;
         }
 
+        // 2) Auto-join if token is present (fixes: messages only after refresh + wrong online status)
+        if (!(ws as any).__joinedUserId) {
+          const tokenCandidate = parsed?.token || parsed?.authToken || parsed?.jwt || parsed?.message?.token;
+          const joined = await ensureJoined(ws, tokenCandidate);
+          if (!joined) {
+            ws.send(JSON.stringify({ type: "error", message: "Not joined" }));
+            return;
+          }
+        }
+
+        const joinedUserId: number = (ws as any).__joinedUserId;
+
         // typing
         if (parsed?.type === "typing") {
-          if (!joinedUserId) return;
-
-          const receiverId = Number(parsed.receiverId) || 0;
-          const senderId = Number(parsed.senderId) || 0;
-          const chatId = Number(parsed.chatId) || 0;
+          const receiverId = toInt(parsed.receiverId, 0);
+          const senderId = toInt(parsed.senderId, 0);
+          const chatId = toInt(parsed.chatId, 0);
           const isTyping = Boolean(parsed.isTyping);
 
           if (senderId !== joinedUserId) return;
 
           const receiverClient = connectedClients.get(receiverId);
           if (receiverClient?.ws?.readyState === WebSocket.OPEN) {
-            receiverClient.ws.send(
-              JSON.stringify({ type: "typing", chatId, senderId, receiverId, isTyping })
-            );
+            receiverClient.ws.send(JSON.stringify({ type: "typing", chatId, senderId, receiverId, isTyping }));
           }
           return;
         }
@@ -507,11 +567,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         switch (validatedMessage.type) {
           case "message": {
-            if (!joinedUserId) {
-              ws.send(JSON.stringify({ type: "error", message: "Not joined" }));
-              return;
-            }
-
             const senderId = toInt((validatedMessage as any).senderId, 0);
             const receiverId = toInt((validatedMessage as any).receiverId, 0);
 
@@ -550,14 +605,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
             await storage.updateChatLastMessage(chat.id, (newMessage as any).id);
 
-            ws.send(
-              JSON.stringify({
-                type: "message_sent",
-                ok: true,
-                messageId: (newMessage as any).id,
-                chatId: chat.id,
-              })
-            );
+            ws.send(JSON.stringify({ type: "message_sent", ok: true, messageId: (newMessage as any).id, chatId: chat.id }));
 
             const payload = { type: "new_message", message: newMessage };
 
@@ -582,9 +630,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
 
     ws.on("close", async () => {
+      const joinedUserId: number | null = (ws as any).__joinedUserId ?? null;
       if (joinedUserId) {
         connectedClients.delete(joinedUserId);
-        await storage.updateUserOnlineStatus(joinedUserId, false);
+        try {
+          await storage.updateUserOnlineStatus(joinedUserId, false);
+        } catch {}
         broadcast({ type: "user_status", userId: joinedUserId, isOnline: false }, joinedUserId);
       }
     });
