@@ -289,14 +289,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // If either side blocked the other, do not allow starting/creating a chat
-      try {
-        const blocked = await storage.isEitherBlocked(participant1Id, participant2Id);
-        if (blocked) {
-          return safeJson(res, 403, { ok: false, message: "User is blocked" });
-        }
-      } catch {}
-
       const chat = await storage.getOrCreateChatByParticipants(participant1Id, participant2Id);
 
       try {
@@ -386,6 +378,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err) {
       console.error("Block user error:", err);
       return safeJson(res, 500, { ok: false, message: "Failed to block user" });
+    }
+  });
+
+
+  // ✅ Unblock user
+  app.delete("/api/users/:userId/block", requireAuth, async (req: any, res) => {
+    try {
+      const blockedUserId = toInt(req.params.userId, 0);
+      const blockerId = req.auth.userId;
+      if (!blockedUserId) return safeJson(res, 400, { ok: false, message: "blocked userId required" });
+
+      if (typeof (storage as any).unblockUser === "function") {
+        await (storage as any).unblockUser(blockerId, blockedUserId);
+      } else {
+        // fallback: ignore
+      }
+      return res.json({ ok: true, success: true });
+    } catch (err) {
+      console.error("Unblock user error:", err);
+      return safeJson(res, 500, { ok: false, message: "Failed to unblock user" });
+    }
+  });
+
+  // ✅ Block status for a specific user (blockedByMe / blockedMe)
+  app.get("/api/users/:userId/block-status", requireAuth, async (req: any, res) => {
+    try {
+      const otherId = toInt(req.params.userId, 0);
+      const me = req.auth.userId;
+      if (!otherId) return safeJson(res, 400, { ok: false, message: "userId required" });
+
+      const blockedByMe =
+        typeof (storage as any).isUserBlocked === "function" ? await (storage as any).isUserBlocked(me, otherId) : false;
+      const blockedMe =
+        typeof (storage as any).isUserBlocked === "function" ? await (storage as any).isUserBlocked(otherId, me) : false;
+
+      return res.json({ ok: true, blockedByMe, blockedMe });
+    } catch (err) {
+      console.error("Block status error:", err);
+      return safeJson(res, 500, { ok: false, message: "Failed to fetch block status" });
+    }
+  });
+
+  // ✅ List my blocked users
+  app.get("/api/blocked-users", requireAuth, async (req: any, res) => {
+    try {
+      const me = req.auth.userId;
+      const ids =
+        typeof (storage as any).getBlockedUserIds === "function" ? await (storage as any).getBlockedUserIds(me) : [];
+      return res.json({ ok: true, userIds: ids });
+    } catch (err) {
+      console.error("List blocked users error:", err);
+      return safeJson(res, 500, { ok: false, message: "Failed to list blocked users" });
     }
   });
 
@@ -598,14 +642,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
               return;
             }
 
-            // If either side blocked the other, do not deliver or create messages
-            try {
-              const blocked = await storage.isEitherBlocked(senderId, receiverId);
-              if (blocked) {
+            // ✅ Block check (either direction)
+            if (typeof (storage as any).isUserBlocked === "function") {
+              const blockedBySender = await (storage as any).isUserBlocked(senderId, receiverId);
+              const blockedByReceiver = await (storage as any).isUserBlocked(receiverId, senderId);
+              if (blockedBySender || blockedByReceiver) {
                 ws.send(JSON.stringify({ type: "error", message: "User is blocked" }));
                 return;
               }
-            } catch {}
+            }
 
             const chat = await storage.getOrCreateChatByParticipants(senderId, receiverId);
 
