@@ -14,7 +14,7 @@ import {
 } from "@shared/schema";
 
 import { db } from "./db";
-import { eq, and, or, desc, asc, sql, ne, isNull, inArray } from "drizzle-orm";
+import { eq, and, or, desc, asc, sql, ne, isNull } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -23,9 +23,6 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
   updateUserOnlineStatus(id: number, isOnline: boolean): Promise<void>;
   updateUsername(id: number, username: string): Promise<User>;
-
-  // ✅ Delete account
-  deleteUserAccount(userId: number): Promise<void>;
 
   // Messages
   createMessage(message: InsertMessage & { expiresAt: Date }): Promise<Message>;
@@ -81,44 +78,6 @@ class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  /**
-   * ✅ HARD DELETE account + all related rows
-   * Fix for Postgres error: malformed array literal: "42"
-   * We use inArray() instead of raw ANY() SQL.
-   */
-  async deleteUserAccount(userId: number): Promise<void> {
-    await db.transaction(async (tx) => {
-      // delete per-user flags
-      await tx.delete(deletedChats).where(eq(deletedChats.userId, userId));
-
-      // delete blocks where user is blocker OR blocked
-      await tx
-        .delete(blockedUsers)
-        .where(or(eq(blockedUsers.blockerId, userId), eq(blockedUsers.blockedId, userId)));
-
-      // get all chat ids for this user
-      const userChats = await tx
-        .select({ id: chats.id })
-        .from(chats)
-        .where(or(eq(chats.participant1Id, userId), eq(chats.participant2Id, userId)));
-
-      const chatIds = userChats.map((c) => c.id);
-
-      // delete all messages in those chats
-      if (chatIds.length > 0) {
-        await tx.delete(messages).where(inArray(messages.chatId, chatIds));
-      }
-
-      // delete chats
-      await tx
-        .delete(chats)
-        .where(or(eq(chats.participant1Id, userId), eq(chats.participant2Id, userId)));
-
-      // finally delete the user
-      await tx.delete(users).where(eq(users.id, userId));
-    });
-  }
-
   async createMessage(message: InsertMessage & { expiresAt: Date }): Promise<Message> {
     const [msg] = await db.insert(messages).values(message as any).returning();
     return msg;
@@ -128,10 +87,53 @@ class DatabaseStorage implements IStorage {
     return await db.select().from(messages).where(eq(messages.chatId, chatId)).orderBy(asc(messages.createdAt));
   }
 
+  /**
+   * ✅ Deletes expired messages AND fixes chats.lastMessageId / chats.lastMessageTimestamp
+   * so the chat list preview never shows an already-expired last message.
+   */
   async deleteExpiredMessages(): Promise<number> {
     const now = new Date();
+
+    // 1) find chats whose lastMessage is already expired
+    const affected = await db
+      .select({ chatId: chats.id })
+      .from(chats)
+      .innerJoin(messages, eq(messages.id, chats.lastMessageId))
+      .where(sql`${messages.expiresAt} < ${now}`);
+
+    const affectedChatIds = Array.from(new Set(affected.map((r) => r.chatId)));
+
+    // 2) delete expired messages
     const result: any = await db.delete(messages).where(sql`${messages.expiresAt} < ${now}`);
-    return (result?.rowCount ?? result?.changes ?? 0) as number;
+    const deletedCount = (result?.rowCount ?? result?.changes ?? 0) as number;
+
+    if (affectedChatIds.length === 0) return deletedCount;
+
+    // 3) recompute last message per affected chat
+    for (const chatId of affectedChatIds) {
+      const [last] = await db
+        .select({ id: messages.id, createdAt: messages.createdAt })
+        .from(messages)
+        .where(eq(messages.chatId, chatId))
+        .orderBy(desc(messages.createdAt))
+        .limit(1);
+
+      if (last?.id) {
+        await db
+          .update(chats)
+          .set({ lastMessageId: last.id as any, lastMessageTimestamp: last.createdAt as any } as any)
+          .where(eq(chats.id, chatId));
+      } else {
+        // no messages left -> keep ordering stable by falling back to chat.createdAt
+        const [c] = await db.select({ createdAt: chats.createdAt }).from(chats).where(eq(chats.id, chatId));
+        await db
+          .update(chats)
+          .set({ lastMessageId: null as any, lastMessageTimestamp: (c?.createdAt ?? now) as any } as any)
+          .where(eq(chats.id, chatId));
+      }
+    }
+
+    return deletedCount;
   }
 
   async createChat(chat: InsertChat): Promise<Chat> {
