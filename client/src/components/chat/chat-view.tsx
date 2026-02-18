@@ -20,6 +20,7 @@ interface ChatViewProps {
 
   onDeleteChat: (chatId: number) => Promise<void> | void;
   onBlockUser: (userId: number) => Promise<void> | void;
+  onUnblockUser?: (userId: number) => Promise<void> | void;
 }
 
 export default function ChatView({
@@ -33,9 +34,25 @@ export default function ChatView({
   onBackToList,
   onDeleteChat,
   onBlockUser,
+  onUnblockUser,
 }: ChatViewProps) {
   const [messageInput, setMessageInput] = useState("");
   const [destructTimer, setDestructTimer] = useState("300");
+
+  const [blockedByMe, setBlockedByMe] = useState(false);
+  const [blockedMe, setBlockedMe] = useState(false);
+
+  const getToken = () => {
+    try {
+      const raw = localStorage.getItem("user");
+      if (!raw) return localStorage.getItem("token");
+      const u = JSON.parse(raw);
+      return u?.token || u?.accessToken || localStorage.getItem("token");
+    } catch {
+      return localStorage.getItem("token");
+    }
+  };
+
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -147,12 +164,45 @@ export default function ChatView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedChat?.id]);
 
+  // ✅ Fetch block status for selected user (so we can disable sending + show Unblock)
+  useEffect(() => {
+    const run = async () => {
+      if (!selectedChat?.otherUser?.id) {
+        setBlockedByMe(false);
+        setBlockedMe(false);
+        return;
+      }
+      const token = getToken();
+      if (!token) return;
+
+      try {
+        const res = await fetch(`/api/users/${selectedChat.otherUser.id}/block-status`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => null);
+        if (data?.ok) {
+          setBlockedByMe(!!data.blockedByMe);
+          setBlockedMe(!!data.blockedMe);
+        }
+      } catch {}
+    };
+
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedChat?.id]);
+
+
   const handleSendMessage = () => {
     const text = messageInput.trim();
     if (!text || !selectedChat) return;
 
     if (!isConnected) {
       alert(t("notConnected"));
+      return;
+    }
+
+    if (blockedMe || blockedByMe) {
+      alert(t("blockedCannotMessage"));
       return;
     }
 
@@ -414,7 +464,7 @@ export default function ChatView({
 
           <Button
             onClick={handleSendMessage}
-            disabled={!messageInput.trim() || !isConnected}
+            disabled={!messageInput.trim() || !isConnected || blockedMe || blockedByMe}
             className="w-11 h-11 rounded-full flex-shrink-0 bg-blue-600 hover:bg-blue-700 disabled:bg-muted disabled:opacity-50 text-white touch-target"
             aria-label="Send"
           >
