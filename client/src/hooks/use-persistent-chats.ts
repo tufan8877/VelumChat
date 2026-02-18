@@ -750,16 +750,14 @@ export function usePersistentChats(userId?: number, socket?: any) {
     socket.on("user_status", handler);
     socket.on("profile_updated", handler);
     socket.on("typing", handler);
-    // IMPORTANT: WS wrapper emits events by `type`.
-    // Realtime chat messages arrive on the "new_message" event.
-    socket.on("new_message", handler);
+    socket.on("message", handler);
 
     return () => {
       socket.off?.("online_users", handler);
       socket.off?.("user_status", handler);
       socket.off?.("profile_updated", handler);
       socket.off?.("typing", handler);
-      socket.off?.("new_message", handler);
+      socket.off?.("message", handler);
     };
   }, [socket, userId, handleWSData]);
 
