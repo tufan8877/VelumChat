@@ -104,6 +104,29 @@ export default function ChatPage() {
     [loadPersistentContacts]
   );
 
+
+  const handleUnblockUser = useCallback(
+    async (userIdToUnblock: number) => {
+      const token = getToken();
+      if (!token) return;
+
+      try {
+        await fetch(`/api/users/${userIdToUnblock}/block`, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        });
+      } catch {}
+
+      try {
+        await loadPersistentContacts();
+      } catch {}
+    },
+    [loadPersistentContacts]
+  );
+
   if (!currentUser) {
     return (
       <div className="min-h-screen flex items-center justify-center overflow-x-hidden">
@@ -137,6 +160,9 @@ export default function ChatPage() {
           onBlockUser={async (uid) => {
             await handleBlockUser(uid);
           }}
+          onUnblockUser={async (uid) => {
+            await handleUnblockUser(uid);
+          }}
         />
       </div>
 
@@ -161,6 +187,9 @@ export default function ChatPage() {
           }}
           onBlockUser={async (uid) => {
             await handleBlockUser(uid);
+          }}
+          onUnblockUser={async (uid) => {
+            await handleUnblockUser(uid);
           }}
         />
       </div>
