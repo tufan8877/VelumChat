@@ -1,118 +1,143 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
-type WSState = {
-  ws: WebSocket | null;
-  isConnected: boolean;
-  send: (data: any) => boolean;
-  lastError?: string;
-};
+function getAuthToken(): string | null {
+  try {
+    const raw = localStorage.getItem("user");
+    if (!raw) return null;
+    const u = JSON.parse(raw);
+    return u?.token || u?.accessToken || null;
+  } catch {
+    return null;
+  }
+}
 
-/**
- * Reliable WebSocket hook
- * - Always uses wss:// when page is https://
- * - Sends { type:"join", token } after connection opens (server expects token-based join)
- * - Auto-reconnect with backoff
- */
-export function useWebSocketReliable(userId?: number | null, token?: string | null): WSState {
+export function useWebSocketReliable(userId?: number) {
   const [isConnected, setIsConnected] = useState(false);
-  const [lastError, setLastError] = useState<string | undefined>(undefined);
-
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimerRef = useRef<any>(null);
-  const backoffRef = useRef<number>(500);
+  const eventHandlersRef = useRef<Map<string, Function[]>>(new Map());
+  const reconnectTimeoutRef = useRef<any>(null);
+  const messageQueueRef = useRef<any[]>([]);
 
-  const wsUrl = useMemo(() => {
-    const proto = window.location.protocol === "https:" ? "wss" : "ws";
-    return `${proto}://${window.location.host}/ws`;
+  const emit = useCallback((event: string, data?: any) => {
+    const handlers = eventHandlersRef.current.get(event) || [];
+    handlers.forEach((h) => {
+      try {
+        h(data);
+      } catch (e) {
+        console.error("WS handler error:", e);
+      }
+    });
   }, []);
 
-  const clearReconnect = () => {
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-  };
+  const connect = useCallback(() => {
+    if (!userId) return;
 
-  const scheduleReconnect = () => {
-    clearReconnect();
-    const delay = Math.min(backoffRef.current, 8000);
-    reconnectTimerRef.current = setTimeout(() => {
-      backoffRef.current = Math.min(backoffRef.current * 1.6, 8000);
-      connect();
-    }, delay);
-  };
-
-  const sendJoin = (ws: WebSocket) => {
-    if (!token) return;
-    try {
-      ws.send(JSON.stringify({ type: "join", token }));
-    } catch {}
-  };
-
-  const connect = () => {
-    try {
-      if (
-        wsRef.current &&
-        (wsRef.current.readyState === WebSocket.OPEN ||
-          wsRef.current.readyState === WebSocket.CONNECTING)
-      ) {
-        return;
-      }
-    } catch {}
-
-    setLastError(undefined);
-
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      setIsConnected(true);
-      backoffRef.current = 500;
-      sendJoin(ws);
-    };
-
-    ws.onerror = () => {
-      setLastError("WebSocket error");
-    };
-
-    ws.onclose = () => {
+    const token = getAuthToken();
+    if (!token) {
+      console.error("❌ Missing JWT token in localStorage -> cannot connect websocket.");
       setIsConnected(false);
-      scheduleReconnect();
-    };
-  };
+      return;
+    }
+
+    try {
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const wsUrl = `${protocol}//${window.location.host}/ws`;
+
+      console.log("🔌 Connecting WebSocket:", wsUrl);
+
+      wsRef.current = new WebSocket(wsUrl);
+
+      wsRef.current.onopen = () => {
+        console.log("✅ WebSocket connected");
+        setIsConnected(true);
+
+        // ✅ IMPORTANT: server expects JOIN with token
+        const joinMessage = { type: "join", token };
+        wsRef.current?.send(JSON.stringify(joinMessage));
+        console.log("📤 WS join sent (token)");
+
+        // send queued messages
+        while (messageQueueRef.current.length > 0) {
+          const queued = messageQueueRef.current.shift();
+          wsRef.current?.send(JSON.stringify(queued));
+        }
+
+        emit("connected");
+      };
+
+      wsRef.current.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          // emit specific event
+          if (data?.type) emit(data.type, data);
+          // emit general
+          emit("message", data);
+        } catch (e) {
+          console.error("❌ WS parse error:", e);
+        }
+      };
+
+      wsRef.current.onclose = (evt) => {
+        console.log("🔌 WebSocket closed:", evt.code, evt.reason);
+        setIsConnected(false);
+        emit("disconnected");
+
+        if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = setTimeout(() => {
+          console.log("🔄 WS reconnecting...");
+          connect();
+        }, 2500);
+      };
+
+      wsRef.current.onerror = (err) => {
+        console.error("❌ WebSocket error:", err);
+        setIsConnected(false);
+        emit("error", err);
+      };
+    } catch (e) {
+      console.error("❌ Failed to create WebSocket:", e);
+      setIsConnected(false);
+    }
+  }, [userId, emit]);
 
   useEffect(() => {
     connect();
     return () => {
-      clearReconnect();
+      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       try {
         wsRef.current?.close();
       } catch {}
       wsRef.current = null;
+      eventHandlersRef.current.clear();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wsUrl]);
+  }, [connect]);
 
-  // Re-send join if userId/token changes while socket is open
-  useEffect(() => {
-    const ws = wsRef.current;
-    if (!ws) return;
-    if (ws.readyState !== WebSocket.OPEN) return;
-    sendJoin(ws);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, token]);
-
-  const send = (data: any) => {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
-    try {
-      ws.send(JSON.stringify(data));
+  const send = useCallback((message: any) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(message));
       return true;
-    } catch (e: any) {
-      setLastError(e?.message || "Send failed");
-      return false;
     }
-  };
+    // queue if not open
+    messageQueueRef.current.push(message);
+    return false;
+  }, []);
 
-  return { ws: wsRef.current, isConnected, send, lastError };
+  const on = useCallback((event: string, handler: Function) => {
+    const handlers = eventHandlersRef.current.get(event) || [];
+    handlers.push(handler);
+    eventHandlersRef.current.set(event, handlers);
+  }, []);
+
+  const off = useCallback((event: string, handler?: Function) => {
+    if (!handler) {
+      eventHandlersRef.current.delete(event);
+      return;
+    }
+    const handlers = eventHandlersRef.current.get(event) || [];
+    const idx = handlers.indexOf(handler);
+    if (idx >= 0) handlers.splice(idx, 1);
+    eventHandlersRef.current.set(event, handlers);
+  }, []);
+
+  return { isConnected, send, on, off };
 }
