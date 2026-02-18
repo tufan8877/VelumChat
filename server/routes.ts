@@ -89,19 +89,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
   const connectedClients = new Map<number, ConnectedClient>();
 
-  // ✅ Send to ONE user if connected
-  function sendToUser(userId: number, message: any) {
-    const c = connectedClients.get(userId);
-    if (!c) return false;
-    if (c.ws.readyState !== WebSocket.OPEN) return false;
-    try {
-      c.ws.send(JSON.stringify(message));
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
   function broadcast(message: any, excludeUserId?: number) {
     for (const client of connectedClients.values()) {
       if (excludeUserId && client.userId === excludeUserId) continue;
@@ -190,6 +177,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       console.error("LOGIN ERROR:", err);
       return safeJson(res, 500, { ok: false, message: err?.message || "Login failed" });
+    }
+  });
+
+  // ✅ Delete account (auth, only self)
+  app.delete("/api/users/:userId", requireAuth, async (req: any, res) => {
+    try {
+      const userIdParam = toInt(req.params.userId, 0);
+      if (!userIdParam) return safeJson(res, 400, { ok: false, message: "Invalid userId" });
+
+      if (userIdParam !== req.auth.userId) {
+        return safeJson(res, 403, { ok: false, message: "Forbidden" });
+      }
+
+      // disconnect websocket if connected
+      const client = connectedClients.get(userIdParam);
+      try {
+        if (client?.ws?.readyState === WebSocket.OPEN) {
+          client.ws.close(1000, "Account deleted");
+        }
+      } catch {}
+      connectedClients.delete(userIdParam);
+
+      await storage.deleteAccount(userIdParam);
+
+      // broadcast status offline
+      broadcast({ type: "user_status", userId: userIdParam, isOnline: false }, userIdParam);
+
+      return res.json({ ok: true, success: true });
+    } catch (err: any) {
+      console.error("DELETE ACCOUNT ERROR:", err);
+      return safeJson(res, 500, { ok: false, message: err?.message || "Failed to delete account" });
     }
   });
 
@@ -420,7 +438,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const origin = req.headers.origin as string | undefined;
 
     const allowedOrigins = new Set<string>([
-      "https://velumchat-vtk3.onrender.com",
+      "https://whisper3.onrender.com",
       "http://localhost:5173",
       "http://127.0.0.1:5173",
     ]);
@@ -431,8 +449,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       .filter(Boolean);
     for (const o of extra) allowedOrigins.add(o);
 
-    const forwardedHost =
-      (req.headers["x-forwarded-host"] as string | undefined) || req.headers.host;
+    const forwardedHost = (req.headers["x-forwarded-host"] as string | undefined) || req.headers.host;
 
     let sameHost = false;
     if (origin && forwardedHost) {
@@ -452,9 +469,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     // IP limit
     const xff = req.headers["x-forwarded-for"];
     const ip =
-      typeof xff === "string" && xff.length > 0
-        ? xff.split(",")[0].trim()
-        : req.socket?.remoteAddress || "unknown";
+      typeof xff === "string" && xff.length > 0 ? xff.split(",")[0].trim() : req.socket?.remoteAddress || "unknown";
 
     const curr = ipConnCount.get(ip) ?? 0;
     if (curr >= MAX_CONNS_PER_IP) {
@@ -504,24 +519,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
 
           joinedUserId = payload.userId;
-
-          // ✅ avoid ghost sockets: replace previous
-          const prev = connectedClients.get(joinedUserId);
-          if (prev?.ws && prev.ws !== ws) {
-            try {
-              prev.ws.close(1000, "Replaced by new connection");
-            } catch {}
-          }
-
           connectedClients.set(joinedUserId, { ws, userId: joinedUserId });
           await storage.updateUserOnlineStatus(joinedUserId, true);
 
           ws.send(JSON.stringify({ type: "join_confirmed", ok: true, userId: joinedUserId }));
 
+          // ✅ Initial list of online users
           const onlineUserIds = Array.from(connectedClients.keys());
           ws.send(JSON.stringify({ type: "online_users", userIds: onlineUserIds }));
 
+          // ✅ Broadcast user online
           broadcast({ type: "user_status", userId: joinedUserId, isOnline: true }, joinedUserId);
+
           return;
         }
 
@@ -536,7 +545,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           if (senderId !== joinedUserId) return;
 
-          sendToUser(receiverId, { type: "typing", chatId, senderId, receiverId, isTyping });
+          const receiverClient = connectedClients.get(receiverId);
+          if (receiverClient?.ws?.readyState === WebSocket.OPEN) {
+            receiverClient.ws.send(JSON.stringify({ type: "typing", chatId, senderId, receiverId, isTyping }));
+          }
           return;
         }
 
@@ -613,21 +625,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
               })
             );
 
-            // ✅ IMPORTANT: send multiple event names for compatibility
-            const payloadNew = { type: "new_message", message: newMessage };
-            const payloadMsg = { type: "message", message: newMessage };
-            const payloadRecv = { type: "message_received", message: newMessage };
+            const payload = { type: "new_message", message: newMessage };
 
-            sendToUser(senderId, payloadNew);
-            sendToUser(senderId, payloadMsg);
+            const senderClient = connectedClients.get(senderId);
+            if (senderClient?.ws?.readyState === WebSocket.OPEN) senderClient.ws.send(JSON.stringify(payload));
 
-            sendToUser(receiverId, payloadNew);
-            sendToUser(receiverId, payloadMsg);
-            sendToUser(receiverId, payloadRecv);
-
-            const chatUpdate = { type: "chat_updated", chatId: chat.id, lastMessage: newMessage };
-            sendToUser(senderId, chatUpdate);
-            sendToUser(receiverId, chatUpdate);
+            const receiverClient = connectedClients.get(receiverId);
+            if (receiverClient?.ws?.readyState === WebSocket.OPEN) receiverClient.ws.send(JSON.stringify(payload));
 
             break;
           }
