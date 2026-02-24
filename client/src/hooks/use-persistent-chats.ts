@@ -155,6 +155,13 @@ export function usePersistentChats(userId?: number, socket?: any) {
   const [persistentContacts, setPersistentContacts] = useState<
     Array<Chat & { otherUser: User; lastMessage?: any; unreadCount?: number }>
   >([]);
+
+  // Keep latest contacts list for WS handlers (avoids stale closures)
+  const persistentContactsRef = useRef<typeof persistentContacts>([] as any);
+
+  useEffect(() => {
+    persistentContactsRef.current = persistentContacts as any;
+  }, [persistentContacts]);
   const [activeMessages, setActiveMessages] = useState<Map<number, any[]>>(new Map());
   const [selectedChat, setSelectedChat] = useState<(Chat & { otherUser: User }) | null>(null);
 
@@ -700,6 +707,15 @@ export function usePersistentChats(userId?: number, socket?: any) {
           if (cutoffMs && createdMs && createdMs <= cutoffMs) return;
         }
 
+        // If chat isn't in the sidebar yet (new chat), refresh contacts so it appears immediately
+        const exists = (persistentContactsRef.current as any[])?.some((c: any) => c?.id === m.chatId);
+        if (!exists) {
+          try {
+            // fire-and-forget
+            loadPersistentContacts();
+          } catch {}
+        }
+
         setActiveMessages((prev) => {
           const next = new Map(prev);
           const arr = next.get(m.chatId) || [];
@@ -738,6 +754,7 @@ export function usePersistentChats(userId?: number, socket?: any) {
       setTypingState,
       scheduleMessageDeletion,
       bumpChatToTopAndUpdateLast,
+      loadPersistentContacts,
     ]
   );
 
