@@ -32,6 +32,8 @@ app.use((req, res, next) => {
   // Basis-Whitelist
   const allowedOrigins = new Set<string>([
     "https://whisper3.onrender.com",
+    "https://velumchat.onrender.com",
+    "https://velumchat-main.onrender.com",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
   ]);
