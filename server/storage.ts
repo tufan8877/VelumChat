@@ -115,7 +115,12 @@ class DatabaseStorage implements IStorage {
   }
 
   async getMessagesByChat(chatId: number): Promise<Message[]> {
-    return await db.select().from(messages).where(eq(messages.chatId, chatId)).orderBy(asc(messages.createdAt));
+    const now = new Date();
+    return await db
+      .select()
+      .from(messages)
+      .where(and(eq(messages.chatId, chatId), sql`${messages.expiresAt} > ${now}`))
+      .orderBy(asc(messages.createdAt));
   }
 
   async deleteExpiredMessages(): Promise<number> {
