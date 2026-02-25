@@ -396,7 +396,7 @@ export default function ChatView({
         </div>
 
         {messages.map((m) => (
-          <Message key={m.id} message={m} isOwn={m.senderId === currentUser.id} otherUser={selectedChat.otherUser} />
+          <Message key={m.id} message={m as any} isOwn={m.senderId === currentUser.id} otherUser={selectedChat.otherUser} currentUser={currentUser as any} />
         ))}
 
         {isOtherTyping && (
