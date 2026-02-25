@@ -1,156 +1,257 @@
-// Real end-to-end encryption using Web Crypto API
-export async function generateKeyPair() {
-  try {
-    const keyPair = await crypto.subtle.generateKey(
-      {
-        name: "RSA-OAEP",
-        modulusLength: 2048,
-        publicExponent: new Uint8Array([1, 0, 1]),
-        hash: "SHA-256",
-      },
-      true,
-      ["encrypt", "decrypt"]
-    );
+// client/src/lib/crypto.ts
+// VelumChat E2EE (client-side): Hybrid RSA-OAEP (key wrap) + AES-GCM (payload)
+// - Works for long texts (RSA only wraps AES key)
+// - Backwards compatible: if content isn't an envelope, it's treated as plaintext
 
-    const publicKey = await crypto.subtle.exportKey("spki", keyPair.publicKey);
-    const privateKey = await crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
-
-    return {
-      publicKey: arrayBufferToBase64(publicKey),
-      privateKey: arrayBufferToBase64(privateKey),
+export type EncryptedEnvelopeV2 =
+  | {
+      v: 2;
+      kind: "text";
+      alg: "RSA-OAEP+A256GCM";
+      iv: string; // base64
+      ct: string; // base64
+      ekR: string; // base64 (AES key encrypted for receiver)
+      ekS: string; // base64 (AES key encrypted for sender)
+    }
+  | {
+      v: 2;
+      kind: "file" | "image";
+      alg: "RSA-OAEP+A256GCM";
+      url: string; // encrypted bytes stored server-side
+      iv: string; // base64
+      ekR: string; // base64
+      ekS: string; // base64
+      name?: string;
+      mime?: string;
+      size?: number;
     };
-  } catch (error) {
-    console.error("Key generation failed:", error);
-    throw new Error("Failed to generate encryption keys");
-  }
-}
 
-export async function encryptMessage(message: string, publicKeyBase64: string): Promise<string> {
-  try {
-    console.log("🔒 Encrypting message with public key");
-    console.log("📝 Message length:", message.length);
-    console.log("🔑 Public key length:", publicKeyBase64.length);
-    
-    // Validate inputs
-    if (!message || !publicKeyBase64) {
-      throw new Error("Message and public key are required");
-    }
-    
-    // Clean up public key format - remove whitespace and newlines
-    const cleanPublicKey = publicKeyBase64.replace(/\s+/g, '').replace(/\n/g, '');
-    
-    const publicKeyBuffer = base64ToArrayBuffer(cleanPublicKey);
-    const publicKey = await crypto.subtle.importKey(
-      "spki",
-      publicKeyBuffer,
-      {
-        name: "RSA-OAEP",
-        hash: "SHA-256",
-      },
-      false,
-      ["encrypt"]
-    );
+const enc = new TextEncoder();
+const dec = new TextDecoder();
 
-    const encoder = new TextEncoder();
-    const data = encoder.encode(message);
-    const encrypted = await crypto.subtle.encrypt("RSA-OAEP", publicKey, data);
-    
-    const encryptedBase64 = arrayBufferToBase64(encrypted);
-    console.log("✅ Message encrypted successfully");
-    
-    return encryptedBase64;
-  } catch (error) {
-    console.error("❌ Encryption failed:", error);
-    throw new Error("Failed to encrypt message");
-  }
-}
-
-export async function decryptMessage(encryptedMessage: string, privateKeyBase64: string): Promise<string> {
-  try {
-    console.log("🔓 Attempting to decrypt message...");
-    console.log("🔍 Encrypted message length:", encryptedMessage.length);
-    console.log("🔍 Private key length:", privateKeyBase64.length);
-    
-    // Validate inputs
-    if (!encryptedMessage || !privateKeyBase64) {
-      console.error("❌ Missing encrypted message or private key");
-      return encryptedMessage; // Return original message instead of error
-    }
-
-    // Check if message looks encrypted (base64 format)
-    const isEncrypted = encryptedMessage.length > 100 && /^[A-Za-z0-9+/=]+$/.test(encryptedMessage);
-    
-    if (!isEncrypted) {
-      console.log("📝 Message appears to be plain text, returning as-is");
-      return encryptedMessage;
-    }
-    
-    console.log("🔓 Processing encrypted message for decryption...");
-    
-    // Clean up private key format
-    const cleanPrivateKey = privateKeyBase64.replace(/\s+/g, '').replace(/\n/g, '');
-
-    const privateKeyBuffer = base64ToArrayBuffer(cleanPrivateKey);
-    const privateKey = await crypto.subtle.importKey(
-      "pkcs8",
-      privateKeyBuffer,
-      {
-        name: "RSA-OAEP",
-        hash: "SHA-256",
-      },
-      false,
-      ["decrypt"]
-    );
-
-    console.log("🔑 Private key imported successfully");
-
-    const encryptedBuffer = base64ToArrayBuffer(encryptedMessage);
-    console.log("📥 Encrypted buffer length:", encryptedBuffer.byteLength);
-    
-    const decrypted = await crypto.subtle.decrypt("RSA-OAEP", privateKey, encryptedBuffer);
-    
-    const decoder = new TextDecoder();
-    const decryptedText = decoder.decode(decrypted);
-    console.log("✅ Message successfully decrypted");
-    
-    return decryptedText;
-  } catch (error) {
-    console.error("❌ Decryption failed:", error);
-    console.log("⚠️ Returning original message as fallback");
-    return encryptedMessage; // Return original message instead of error
-  }
-}
-
-// Helper functions for base64 conversion
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
+function abToB64(ab: ArrayBuffer): string {
+  const bytes = new Uint8Array(ab);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
   return btoa(binary);
 }
 
-function base64ToArrayBuffer(base64: string): ArrayBuffer {
-  const binary = atob(base64);
+function b64ToAb(b64: string): ArrayBuffer {
+  const binary = atob(b64);
   const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes.buffer;
 }
 
-export function generateSecurityFingerprint(publicKey1: string, publicKey2: string): string {
-  // Generate a mock security fingerprint for key verification
-  const combined = publicKey1 + publicKey2;
-  let hash = 0;
-  for (let i = 0; i < combined.length; i++) {
-    const char = combined.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32bit integer
+function stripPem(pem: string) {
+  return pem.replace(/-----BEGIN [^-]+-----/g, "").replace(/-----END [^-]+-----/g, "").replace(/\s+/g, "");
+}
+
+export async function importPublicKey(pem: string): Promise<CryptoKey> {
+  const b64 = stripPem(pem);
+  const keyData = b64ToAb(b64);
+  return crypto.subtle.importKey(
+    "spki",
+    keyData,
+    { name: "RSA-OAEP", hash: "SHA-256" },
+    true,
+    ["encrypt"]
+  );
+}
+
+export async function importPrivateKey(pem: string): Promise<CryptoKey> {
+  const b64 = stripPem(pem);
+  const keyData = b64ToAb(b64);
+  return crypto.subtle.importKey(
+    "pkcs8",
+    keyData,
+    { name: "RSA-OAEP", hash: "SHA-256" },
+    true,
+    ["decrypt"]
+  );
+}
+
+// ✅ Generate RSA-OAEP keypair (for wrapping AES keys)
+export async function generateKeyPair(): Promise<{ publicKey: string; privateKey: string }> {
+  const keyPair = await crypto.subtle.generateKey(
+    {
+      name: "RSA-OAEP",
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: "SHA-256",
+    },
+    true,
+    ["encrypt", "decrypt"]
+  );
+
+  const publicKeyData = await crypto.subtle.exportKey("spki", keyPair.publicKey);
+  const privateKeyData = await crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
+
+  const publicKey = `-----BEGIN PUBLIC KEY-----\n${abToB64(publicKeyData)}\n-----END PUBLIC KEY-----`;
+  const privateKey = `-----BEGIN PRIVATE KEY-----\n${abToB64(privateKeyData)}\n-----END PRIVATE KEY-----`;
+
+  return { publicKey, privateKey };
+}
+
+async function genAesKey(): Promise<CryptoKey> {
+  return crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+}
+
+async function exportAesRaw(key: CryptoKey): Promise<ArrayBuffer> {
+  return crypto.subtle.exportKey("raw", key);
+}
+
+async function importAesRaw(raw: ArrayBuffer): Promise<CryptoKey> {
+  return crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+}
+
+async function wrapAesKeyFor(pubKeyPem: string, aesKey: CryptoKey): Promise<string> {
+  const pub = await importPublicKey(pubKeyPem);
+  const raw = await exportAesRaw(aesKey);
+  const wrapped = await crypto.subtle.encrypt({ name: "RSA-OAEP" }, pub, raw);
+  return abToB64(wrapped);
+}
+
+async function unwrapAesKeyWith(privKeyPem: string, wrappedB64: string): Promise<CryptoKey> {
+  const priv = await importPrivateKey(privKeyPem);
+  const raw = await crypto.subtle.decrypt({ name: "RSA-OAEP" }, priv, b64ToAb(wrappedB64));
+  return importAesRaw(raw);
+}
+
+function tryParseEnvelope(content: string): EncryptedEnvelopeV2 | null {
+  if (!content) return null;
+  if (content[0] !== "{") return null;
+  try {
+    const obj = JSON.parse(content);
+    if (obj && obj.v === 2 && obj.alg === "RSA-OAEP+A256GCM") return obj as EncryptedEnvelopeV2;
+    return null;
+  } catch {
+    return null;
   }
-  
-  // Format as groups of 5 digits
-  const fingerprint = Math.abs(hash).toString().padStart(10, '0');
-  return fingerprint.match(/.{1,5}/g)?.join(' ') || fingerprint;
+}
+
+// ✅ Encrypt text for receiver + sender (so both can decrypt later)
+export async function encryptTextV2(params: {
+  plaintext: string;
+  receiverPublicKeyPem: string;
+  senderPublicKeyPem: string;
+}): Promise<string> {
+  const aes = await genAesKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, aes, enc.encode(params.plaintext));
+  const ekR = await wrapAesKeyFor(params.receiverPublicKeyPem, aes);
+  const ekS = await wrapAesKeyFor(params.senderPublicKeyPem, aes);
+
+  const env: EncryptedEnvelopeV2 = {
+    v: 2,
+    kind: "text",
+    alg: "RSA-OAEP+A256GCM",
+    iv: abToB64(iv.buffer),
+    ct: abToB64(ct),
+    ekR,
+    ekS,
+  };
+  return JSON.stringify(env);
+}
+
+export async function decryptTextV2(params: {
+  content: string;
+  privateKeyPem: string;
+}): Promise<string> {
+  const env = tryParseEnvelope(params.content);
+  if (!env) return params.content; // plaintext/backward
+  if (env.kind !== "text") return params.content;
+
+  // Prefer ekR, fallback ekS
+  const wrapped = (env as any).ekR || (env as any).ekS;
+  const aes = await unwrapAesKeyWith(params.privateKeyPem, wrapped);
+  const iv = new Uint8Array(b64ToAb(env.iv));
+  const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, aes, b64ToAb(env.ct));
+  return dec.decode(pt);
+}
+
+// ✅ Encrypt file bytes; returns { envelopeJson, encryptedBytes }
+export async function encryptFileV2(params: {
+  bytes: ArrayBuffer;
+  receiverPublicKeyPem: string;
+  senderPublicKeyPem: string;
+  kind: "file" | "image";
+  name?: string;
+  mime?: string;
+  size?: number;
+}): Promise<{ envelope: Omit<Extract<EncryptedEnvelopeV2, { kind: "file" | "image" }>, "url">; encryptedBytes: ArrayBuffer }> {
+  const aes = await genAesKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, aes, params.bytes);
+
+  const ekR = await wrapAesKeyFor(params.receiverPublicKeyPem, aes);
+  const ekS = await wrapAesKeyFor(params.senderPublicKeyPem, aes);
+
+  const env = {
+    v: 2 as const,
+    kind: params.kind,
+    alg: "RSA-OAEP+A256GCM" as const,
+    iv: abToB64(iv.buffer),
+    ekR,
+    ekS,
+    name: params.name,
+    mime: params.mime,
+    size: params.size,
+  };
+
+  return { envelope: env, encryptedBytes: ct };
+}
+
+export async function decryptFileV2(params: {
+  envJson: string;
+  privateKeyPem: string;
+}): Promise<{ url: string; kind: "file" | "image"; name?: string; mime?: string; size?: number } | null> {
+  const env = tryParseEnvelope(params.envJson);
+  if (!env) return null;
+  if (env.kind !== "file" && env.kind !== "image") return null;
+  if (!("url" in env)) return null;
+  // actual decrypt is done after fetching bytes, see decryptBytesWithEnvV2
+  return { url: env.url, kind: env.kind, name: env.name, mime: env.mime, size: env.size };
+}
+
+export async function decryptBytesWithEnvV2(params: {
+  envJson: string;
+  encryptedBytes: ArrayBuffer;
+  privateKeyPem: string;
+}): Promise<ArrayBuffer | null> {
+  const env = tryParseEnvelope(params.envJson);
+  if (!env) return null;
+  if (env.kind !== "file" && env.kind !== "image") return null;
+
+  const wrapped = (env as any).ekR || (env as any).ekS;
+  const aes = await unwrapAesKeyWith(params.privateKeyPem, wrapped);
+  const iv = new Uint8Array(b64ToAb(env.iv));
+  const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, aes, params.encryptedBytes);
+  return pt;
+}
+
+// ---------------------------------------------------------------------
+// Backwards-compat helpers (old RSA-only functions)
+// ---------------------------------------------------------------------
+export async function encryptMessage(message: string, publicKeyPem: string): Promise<string> {
+  // Old API now just produces a V2 envelope **without** sender copy.
+  // Prefer encryptTextV2 in new code.
+  const aes = await genAesKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, aes, enc.encode(message));
+  const ek = await wrapAesKeyFor(publicKeyPem, aes);
+  const env = {
+    v: 2,
+    kind: "text",
+    alg: "RSA-OAEP+A256GCM",
+    iv: abToB64(iv.buffer),
+    ct: abToB64(ct),
+    ekR: ek,
+    ekS: ek,
+  } satisfies EncryptedEnvelopeV2;
+  return JSON.stringify(env);
+}
+
+export async function decryptMessage(encryptedMessage: string, privateKeyPem: string): Promise<string> {
+  return decryptTextV2({ content: encryptedMessage, privateKeyPem });
 }
