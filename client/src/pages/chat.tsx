@@ -65,7 +65,7 @@ export default function ChatPage() {
     loadPersistentContacts,
     unreadCounts,
     deleteChat,
-  } = usePersistentChats(currentUser?.id, socket);
+  } = usePersistentChats(currentUser?.id, socket, currentUser as any);
 
   const handleSendMessage = useCallback(
     (content: string, type: string, destructTimer: number, file?: File) => {
