@@ -155,13 +155,6 @@ export function usePersistentChats(userId?: number, socket?: any) {
   const [persistentContacts, setPersistentContacts] = useState<
     Array<Chat & { otherUser: User; lastMessage?: any; unreadCount?: number }>
   >([]);
-
-  // Keep latest contacts list for WS handlers (avoids stale closures)
-  const persistentContactsRef = useRef<typeof persistentContacts>([] as any);
-
-  useEffect(() => {
-    persistentContactsRef.current = persistentContacts as any;
-  }, [persistentContacts]);
   const [activeMessages, setActiveMessages] = useState<Map<number, any[]>>(new Map());
   const [selectedChat, setSelectedChat] = useState<(Chat & { otherUser: User }) | null>(null);
 
@@ -174,6 +167,11 @@ export function usePersistentChats(userId?: number, socket?: any) {
 
   // chatId -> typing (other user)
   const [typingByChat, setTypingByChat] = useState<Map<number, boolean>>(new Map());
+
+  // Prevent double-applying the same message (can happen if upstream emits
+  // duplicate generic WS events). This also prevents unread counters from
+  // incrementing twice for a single incoming message.
+  const seenMessageIdsRef = useRef<Set<number>>(new Set());
   const typingTimeoutsRef = useRef<Map<number, any>>(new Map());
 
   // message self-destruction timers
@@ -376,6 +374,13 @@ export function usePersistentChats(userId?: number, socket?: any) {
           next.set(chatId, msgs);
           return next;
         });
+
+        // Mark fetched messages as seen so WS duplicates don't re-apply.
+        try {
+          for (const m of msgs || []) {
+            if (m?.id) seenMessageIdsRef.current.add(m.id);
+          }
+        } catch {}
 
         msgs.forEach((m: any) => scheduleMessageDeletion(m));
       } catch (e) {
@@ -699,21 +704,17 @@ export function usePersistentChats(userId?: number, socket?: any) {
         // receiver only
         if (m.receiverId !== userId) return;
 
+        // ✅ Dedupe: if this message was already processed, ignore it.
+        // (Some clients emit multiple generic events for one WS frame.)
+        if (m?.id && seenMessageIdsRef.current.has(m.id)) return;
+        if (m?.id) seenMessageIdsRef.current.add(m.id);
+
         // cutoff
         const cutoffIso = cutoffsRef.current[String(m.chatId)];
         if (cutoffIso) {
           const cutoffMs = toMs(cutoffIso);
           const createdMs = toMs(m.createdAt);
           if (cutoffMs && createdMs && createdMs <= cutoffMs) return;
-        }
-
-        // If chat isn't in the sidebar yet (new chat), refresh contacts so it appears immediately
-        const exists = (persistentContactsRef.current as any[])?.some((c: any) => c?.id === m.chatId);
-        if (!exists) {
-          try {
-            // fire-and-forget
-            loadPersistentContacts();
-          } catch {}
         }
 
         setActiveMessages((prev) => {
@@ -754,7 +755,6 @@ export function usePersistentChats(userId?: number, socket?: any) {
       setTypingState,
       scheduleMessageDeletion,
       bumpChatToTopAndUpdateLast,
-      loadPersistentContacts,
     ]
   );
 
