@@ -72,15 +72,9 @@ export function useWebSocketReliable(userId?: number) {
           // Emit specific event by server type
           if (data?.type) {
             emit(data.type, data);
-
-            // Backward-compat: some parts of the app expect "message" events
-            // while the server emits "new_message".
-            if (data.type === "new_message") {
-              // normalize shape to what older handlers expect
-              emit("message", data);
-            }
           }
-          // emit general
+          // Generic channel: emit exactly once per WS frame.
+          // (No special-casing; callers can inspect data.type.)
           emit("message", data);
         } catch (e) {
           console.error("❌ WS parse error:", e);
