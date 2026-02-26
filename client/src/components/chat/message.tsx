@@ -11,6 +11,23 @@ function formatTime(ts: any) {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+/**
+ * Only allow http/https URLs for remote loads (prevents javascript:, data:, etc.)
+ * - blob: URLs are produced locally by createObjectURL and are allowed separately.
+ */
+function safeHttpUrl(input: string | null | undefined): string | null {
+  if (!input) return null;
+  const s = String(input).trim();
+  if (!s) return null;
+  try {
+    const u = new URL(s);
+    if (u.protocol === "http:" || u.protocol === "https:") return u.toString();
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 type Msg = {
   id: number;
   senderId: number;
@@ -34,7 +51,10 @@ export default function Message({
   otherUser: User;
   currentUser: any;
 }) {
-  const time = useMemo(() => formatTime(message.createdAt || Date.now()), [message.createdAt]);
+  const time = useMemo(
+    () => formatTime(message.createdAt || Date.now()),
+    [message.createdAt]
+  );
 
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(message.fileName || null);
@@ -59,17 +79,28 @@ export default function Message({
 
       try {
         const meta = await decryptFileV2({ envJson: message.content, privateKeyPem: priv });
-        if (!meta?.url) return;
+        const remoteUrl = safeHttpUrl(meta?.url);
+        if (!remoteUrl) return;
 
         setIsDecrypting(true);
-        const resp = await fetch(meta.url, { credentials: "include" });
-        const buf = await resp.arrayBuffer();
 
-        const plain = await decryptBytesWithEnvV2({ envJson: message.content, encryptedBytes: buf, privateKeyPem: priv });
+        // NOTE: credentials include only makes sense for your own domain;
+        // keep it for existing behavior, but we now hard-restrict to http/https URLs.
+        const resp = await fetch(remoteUrl, { credentials: "include" });
+        if (!resp.ok) return;
+
+        const buf = await resp.arrayBuffer();
+        const plain = await decryptBytesWithEnvV2({
+          envJson: message.content,
+          encryptedBytes: buf,
+          privateKeyPem: priv,
+        });
         if (!plain) return;
 
-        const mime = meta.mime || (meta.kind === "image" ? "image/*" : "application/octet-stream");
-        const name = meta.name || message.fileName || (meta.kind === "image" ? "image" : "file");
+        const mime =
+          meta?.mime || (meta?.kind === "image" ? "image/*" : "application/octet-stream");
+        const name =
+          meta?.name || message.fileName || (meta?.kind === "image" ? "image" : "file");
 
         const blob = new Blob([plain], { type: mime });
         const url = URL.createObjectURL(blob);
@@ -104,16 +135,19 @@ export default function Message({
   const headerLetter = (otherUser?.username || "U").charAt(0).toUpperCase();
 
   const renderBody = () => {
-    // Text
+    // Text (React escapes content by default → XSS-safe)
     if (message.messageType === "text") {
       return <span className="break-words whitespace-pre-wrap">{message.content}</span>;
     }
 
     // Image
     if (message.messageType === "image") {
-      const src = fileUrl || (message.content.startsWith("http") ? message.content : null);
+      const remote = safeHttpUrl(message.content);
+      const src = fileUrl || remote;
       if (!src) {
-        return <span className="text-sm opacity-80">{isDecrypting ? "Decrypting…" : "Image"}</span>;
+        return (
+          <span className="text-sm opacity-80">{isDecrypting ? "Decrypting…" : "Image"}</span>
+        );
       }
       return (
         <img
@@ -121,16 +155,20 @@ export default function Message({
           alt="image"
           className="max-w-[240px] md:max-w-[320px] rounded-xl border border-border/40"
           loading="lazy"
+          referrerPolicy="no-referrer"
         />
       );
     }
 
     // File
     if (message.messageType === "file") {
-      const href = fileUrl || (message.content.startsWith("http") ? message.content : null);
+      const remote = safeHttpUrl(message.content);
+      const href = fileUrl || remote;
       const name = fileName || "file";
       if (!href) {
-        return <span className="text-sm opacity-80">{isDecrypting ? "Decrypting…" : name}</span>;
+        return (
+          <span className="text-sm opacity-80">{isDecrypting ? "Decrypting…" : name}</span>
+        );
       }
       return (
         <a
@@ -138,13 +176,14 @@ export default function Message({
           download={name}
           className={isOwn ? "underline underline-offset-2" : "text-blue-300 underline underline-offset-2"}
           target="_blank"
-          rel="noreferrer"
+          rel="noopener noreferrer"
         >
           {name}
         </a>
       );
     }
 
+    // Fallback: still XSS-safe (escaped)
     return <span className="break-words whitespace-pre-wrap">{message.content}</span>;
   };
 
