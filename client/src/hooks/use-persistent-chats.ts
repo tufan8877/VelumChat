@@ -155,6 +155,14 @@ export function usePersistentChats(userId?: number, socket?: any) {
   const [persistentContacts, setPersistentContacts] = useState<
     Array<Chat & { otherUser: User; lastMessage?: any; unreadCount?: number }>
   >([]);
+
+  // ✅ Keep latest contacts in a ref so WS handlers can detect brand-new chats.
+  const contactsRef = useRef<
+    Array<Chat & { otherUser: User; lastMessage?: any; unreadCount?: number }>
+  >([]);
+  useEffect(() => {
+    contactsRef.current = persistentContacts;
+  }, [persistentContacts]);
   const [activeMessages, setActiveMessages] = useState<Map<number, any[]>>(new Map());
   const [selectedChat, setSelectedChat] = useState<(Chat & { otherUser: User }) | null>(null);
 
@@ -167,11 +175,6 @@ export function usePersistentChats(userId?: number, socket?: any) {
 
   // chatId -> typing (other user)
   const [typingByChat, setTypingByChat] = useState<Map<number, boolean>>(new Map());
-
-  // Prevent double-applying the same message (can happen if upstream emits
-  // duplicate generic WS events). This also prevents unread counters from
-  // incrementing twice for a single incoming message.
-  const seenMessageIdsRef = useRef<Set<number>>(new Set());
   const typingTimeoutsRef = useRef<Map<number, any>>(new Map());
 
   // message self-destruction timers
@@ -374,13 +377,6 @@ export function usePersistentChats(userId?: number, socket?: any) {
           next.set(chatId, msgs);
           return next;
         });
-
-        // Mark fetched messages as seen so WS duplicates don't re-apply.
-        try {
-          for (const m of msgs || []) {
-            if (m?.id) seenMessageIdsRef.current.add(m.id);
-          }
-        } catch {}
 
         msgs.forEach((m: any) => scheduleMessageDeletion(m));
       } catch (e) {
@@ -632,7 +628,7 @@ export function usePersistentChats(userId?: number, socket?: any) {
   }, []);
 
   const handleWSData = useCallback(
-    (data: any) => {
+    async (data: any) => {
       if (!data || typeof data !== "object") return;
 
       // online list
@@ -701,13 +697,19 @@ export function usePersistentChats(userId?: number, socket?: any) {
       if (data.type === "new_message" && data.message) {
         const m: any = data.message;
 
+        // ✅ Brand-new chat: ensure it appears immediately in the receiver sidebar.
+        // If we don't have this chat in our current contacts list yet, refresh silently.
+        const chatExists = contactsRef.current?.some((c) => c.id === m.chatId);
+        if (!chatExists) {
+          try {
+            await refreshContactsSilently();
+          } catch {
+            // ignore
+          }
+        }
+
         // receiver only
         if (m.receiverId !== userId) return;
-
-        // ✅ Dedupe: if this message was already processed, ignore it.
-        // (Some clients emit multiple generic events for one WS frame.)
-        if (m?.id && seenMessageIdsRef.current.has(m.id)) return;
-        if (m?.id) seenMessageIdsRef.current.add(m.id);
 
         // cutoff
         const cutoffIso = cutoffsRef.current[String(m.chatId)];
@@ -755,13 +757,16 @@ export function usePersistentChats(userId?: number, socket?: any) {
       setTypingState,
       scheduleMessageDeletion,
       bumpChatToTopAndUpdateLast,
+      refreshContactsSilently,
     ]
   );
 
   useEffect(() => {
     if (!socket?.on || !userId) return;
 
-    const handler = (d: any) => handleWSData(d);
+    const handler = (d: any) => {
+      void handleWSData(d);
+    };
 
     socket.on("online_users", handler);
     socket.on("user_status", handler);
