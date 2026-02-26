@@ -693,6 +693,24 @@ export function usePersistentChats(userId?: number, socket?: any) {
         return;
       }
 
+      // read receipts (sender side)
+      if (data.type === "messages_read" && data.chatId && Array.isArray(data.messageIds)) {
+        const chatId = Number(data.chatId);
+        const ids = new Set<number>(data.messageIds.map((x: any) => Number(x)).filter((n: any) => Number.isFinite(n)));
+        if (ids.size) {
+          setActiveMessages((prev) => {
+            const next = new Map(prev);
+            const arr = next.get(chatId) || [];
+            next.set(
+              chatId,
+              arr.map((m: any) => (ids.has(Number(m.id)) ? { ...m, isRead: true } : m))
+            );
+            return next;
+          });
+        }
+        return;
+      }
+
       // new message
       if (data.type === "new_message" && data.message) {
         const m: any = data.message;
@@ -727,6 +745,17 @@ export function usePersistentChats(userId?: number, socket?: any) {
         });
 
         scheduleMessageDeletion(m);
+
+        // ✅ auto-mark read when chat is open (so sender gets ✅✅)
+        if (selectedChat && selectedChat.id === m.chatId) {
+          try {
+            await authedFetch(
+              `/api/chats/${m.chatId}/mark-read`,
+              { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) },
+              15000
+            );
+          } catch {}
+        }
 
         // update list instantly
         bumpChatToTopAndUpdateLast(m.chatId, {
