@@ -1,4 +1,3 @@
-
 // profile-protection.ts (SECURE VERSION)
 // Private key is NEVER stored in cookies anymore.
 // Backward compatible migration from old insecure cookie.
