@@ -30,6 +30,8 @@ export interface IStorage {
   // Messages
   createMessage(message: InsertMessage & { expiresAt: Date }): Promise<Message>;
   getMessagesByChat(chatId: number): Promise<Message[]>;
+  markMessagesRead(chatId: number, receiverId: number): Promise<number[]>;
+  getChat(chatId: number): Promise<Chat | undefined>;
   deleteExpiredMessages(): Promise<number>;
 
   // Chats
@@ -121,6 +123,28 @@ class DatabaseStorage implements IStorage {
       .from(messages)
       .where(and(eq(messages.chatId, chatId), sql`${messages.expiresAt} > ${now}`))
       .orderBy(asc(messages.createdAt));
+  }
+
+  async markMessagesRead(chatId: number, receiverId: number): Promise<number[]> {
+    const now = new Date();
+    const rows = await db
+      .update(messages)
+      .set({ isRead: true } as any)
+      .where(
+        and(
+          eq(messages.chatId, chatId),
+          eq(messages.receiverId, receiverId),
+          eq(messages.isRead as any, false as any),
+          sql`${messages.expiresAt} > ${now}`
+        )
+      )
+      .returning({ id: messages.id });
+    return rows.map((r: any) => r.id);
+  }
+
+  async getChat(chatId: number): Promise<Chat | undefined> {
+    const [chat] = await db.select().from(chats).where(eq(chats.id, chatId));
+    return chat as any;
   }
 
   async deleteExpiredMessages(): Promise<number> {
