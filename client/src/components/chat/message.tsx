@@ -1,21 +1,39 @@
 import React, { useEffect, useMemo, useState } from "react";
 import type { User } from "@shared/schema";
 import { decryptFileV2, decryptBytesWithEnvV2 } from "@/lib/crypto";
+import { Check, CheckCheck, Clock } from "lucide-react";
 
 function toMs(v: any): number {
   const t = new Date(v).getTime();
-  return Number.isFinite(t) ? t : Date.now();
+  return Number.isFinite(t) ? t : 0;
 }
 function formatTime(ts: any) {
-  const d = new Date(toMs(ts));
+  const ms = toMs(ts);
+  const d = new Date(ms || Date.now());
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatTtl(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  const d = Math.floor(h / 24);
+  return `${d}d`;
+}
+
+function formatRemaining(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return formatTtl(s);
 }
 
 /**
  * ✅ Safe URL helper (FIXED)
  * We allow:
  * - absolute http/https URLs
- * - relative URLs starting with "/" (same-origin, e.g. /api/...)
+ * - relative URLs starting with "/" (same-origin, e.g. /uploads/... or /api/...)
  * - blob: URLs (created locally)
  *
  * We still BLOCK: javascript:, data:, file:, etc.
@@ -50,6 +68,9 @@ type Msg = {
   fileName?: string | null;
   fileSize?: number | null;
   createdAt?: any;
+  expiresAt?: any;
+  destructTimer?: number | null;
+  isRead?: boolean | any;
 };
 
 export default function Message({
@@ -63,14 +84,41 @@ export default function Message({
   otherUser: User;
   currentUser: any;
 }) {
-  const time = useMemo(
-    () => formatTime(message.createdAt || Date.now()),
-    [message.createdAt]
-  );
+  const createdMs = useMemo(() => toMs(message.createdAt || Date.now()), [message.createdAt]);
+  const expiresMs = useMemo(() => toMs(message.expiresAt), [message.expiresAt]);
+
+  // ✅ Hard safety: if expired, render nothing (covers sender+receiver even if state didn't update)
+  if (expiresMs && Date.now() >= expiresMs) return null;
+
+  const time = useMemo(() => formatTime(createdMs), [createdMs]);
 
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(message.fileName || null);
   const [isDecrypting, setIsDecrypting] = useState(false);
+
+  const [remaining, setRemaining] = useState<string | null>(null);
+
+  // ✅ Show expiry label (so users know when it disappears)
+  useEffect(() => {
+    if (!expiresMs) {
+      setRemaining(null);
+      return;
+    }
+
+    const tick = () => {
+      const left = expiresMs - Date.now();
+      if (left <= 0) {
+        setRemaining("0s");
+        return;
+      }
+      setRemaining(formatRemaining(left));
+    };
+
+    tick();
+    // Update every second (simple + clear)
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [expiresMs]);
 
   // ✅ Decrypt encrypted file/image envelopes on the fly
   useEffect(() => {
@@ -149,7 +197,6 @@ export default function Message({
 
     // Image
     if (message.messageType === "image") {
-      // If message.content is a direct URL, allow it (incl. /api/...)
       const direct = safeUrl(message.content);
       const src = fileUrl || direct;
 
@@ -199,6 +246,9 @@ export default function Message({
     return <span className="break-words whitespace-pre-wrap">{message.content}</span>;
   };
 
+  const isRead = Boolean(message?.isRead);
+  const ReceiptIcon = isRead ? CheckCheck : Check;
+
   return (
     <div className={wrapperClass}>
       {!isOwn && (
@@ -209,8 +259,27 @@ export default function Message({
 
       <div className={`max-w-[78%] md:max-w-[70%] px-4 py-2 ${bubbleClass}`}>
         {renderBody()}
-        <div className={`mt-1 text-[11px] ${isOwn ? "text-white/80" : "text-muted-foreground"} text-right`}>
-          {time}
+
+        <div className={`mt-1 flex items-center gap-2 text-[11px] ${isOwn ? "text-white/80" : "text-muted-foreground"} justify-end`}>
+          {remaining && (
+            <span className="inline-flex items-center gap-1">
+              <Clock className="w-3 h-3" />
+              <span>{remaining}</span>
+            </span>
+          )}
+
+          <span>{time}</span>
+
+          {isOwn && (
+            <span
+              className={`inline-flex items-center justify-center w-4 h-4 rounded-full ${
+                isRead ? "bg-white/25" : "bg-white/15"
+              }`}
+              title={isRead ? "Gelesen" : "Gesendet"}
+            >
+              <ReceiptIcon className="w-3 h-3" />
+            </span>
+          )}
         </div>
       </div>
     </div>
