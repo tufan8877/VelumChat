@@ -345,8 +345,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userIdParam = req.auth.userId;
       if (!chatId) return safeJson(res, 400, { ok: false, message: "chatId required" });
 
+      // ✅ Mark messages as read (for read-receipts) + reset unread badge
+      const messageIds = await storage.markMessagesRead(chatId, userIdParam);
       await storage.resetUnreadCount(chatId, userIdParam);
-      return res.json({ ok: true, success: true });
+
+      // ✅ Notify the OTHER participant live (read receipts)
+      try {
+        const chat = await storage.getChat(chatId);
+        if (chat) {
+          const otherUserId =
+            (chat as any).participant1Id === userIdParam ? (chat as any).participant2Id : (chat as any).participant2Id === userIdParam ? (chat as any).participant1Id : null;
+
+          if (otherUserId) {
+            const otherClient = connectedClients.get(otherUserId);
+            if (otherClient?.ws?.readyState === WebSocket.OPEN) {
+              otherClient.ws.send(JSON.stringify({ type: "messages_read", chatId, messageIds }));
+            }
+          }
+        }
+      } catch {}
+
+      return res.json({ ok: true, success: true, messageIds });
     } catch (err) {
       console.error("Mark read error:", err);
       return safeJson(res, 500, { ok: false, message: "Failed to mark chat as read" });
