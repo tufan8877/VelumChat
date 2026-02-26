@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import helmet from "helmet";
+import path from "path";
 
 
 const app = express();
@@ -17,7 +18,7 @@ app.use(
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", "data:", "blob:"],
+        imgSrc: ["'self'", "data:", "blob:", "https:"],
         connectSrc: ["'self'", "wss:", "https:"],
         fontSrc: ["'self'", "data:"],
         objectSrc: ["'none'"],
@@ -41,6 +42,13 @@ for (const k of REQUIRED_ENVS) {
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+/**
+ * 📎 Serve uploaded files (for /uploads/... URLs)
+ * If your upload route returns paths like "/uploads/<file>", this ensures images/files load in the chat.
+ */
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+
 
 /**
  * ✅ CORS (korrekt für credentials: "include")
