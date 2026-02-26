@@ -12,13 +12,25 @@ function formatTime(ts: any) {
 }
 
 /**
- * Only allow http/https URLs for remote loads (prevents javascript:, data:, etc.)
- * - blob: URLs are produced locally by createObjectURL and are allowed separately.
+ * ✅ Safe URL helper (FIXED)
+ * We allow:
+ * - absolute http/https URLs
+ * - relative URLs starting with "/" (same-origin, e.g. /api/...)
+ * - blob: URLs (created locally)
+ *
+ * We still BLOCK: javascript:, data:, file:, etc.
  */
-function safeHttpUrl(input: string | null | undefined): string | null {
+function safeUrl(input: string | null | undefined): string | null {
   if (!input) return null;
   const s = String(input).trim();
   if (!s) return null;
+
+  // allow relative same-origin paths
+  if (s.startsWith("/")) return s;
+
+  // allow blob URLs (local object URLs)
+  if (s.startsWith("blob:")) return s;
+
   try {
     const u = new URL(s);
     if (u.protocol === "http:" || u.protocol === "https:") return u.toString();
@@ -58,7 +70,6 @@ export default function Message({
 
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(message.fileName || null);
-  const [fileMime, setFileMime] = useState<string | null>(null);
   const [isDecrypting, setIsDecrypting] = useState(false);
 
   // ✅ Decrypt encrypted file/image envelopes on the fly
@@ -68,7 +79,6 @@ export default function Message({
 
     const run = async () => {
       setFileUrl(null);
-      setFileMime(null);
       setFileName(message.fileName || null);
 
       const priv = currentUser?.privateKey as string | undefined;
@@ -79,13 +89,11 @@ export default function Message({
 
       try {
         const meta = await decryptFileV2({ envJson: message.content, privateKeyPem: priv });
-        const remoteUrl = safeHttpUrl(meta?.url);
+        const remoteUrl = safeUrl(meta?.url);
         if (!remoteUrl) return;
 
         setIsDecrypting(true);
 
-        // NOTE: credentials include only makes sense for your own domain;
-        // keep it for existing behavior, but we now hard-restrict to http/https URLs.
         const resp = await fetch(remoteUrl, { credentials: "include" });
         if (!resp.ok) return;
 
@@ -107,7 +115,6 @@ export default function Message({
         revokeUrl = url;
 
         if (!alive) return;
-        setFileMime(mime);
         setFileName(name);
         setFileUrl(url);
       } catch {
@@ -142,13 +149,16 @@ export default function Message({
 
     // Image
     if (message.messageType === "image") {
-      const remote = safeHttpUrl(message.content);
-      const src = fileUrl || remote;
+      // If message.content is a direct URL, allow it (incl. /api/...)
+      const direct = safeUrl(message.content);
+      const src = fileUrl || direct;
+
       if (!src) {
         return (
           <span className="text-sm opacity-80">{isDecrypting ? "Decrypting…" : "Image"}</span>
         );
       }
+
       return (
         <img
           src={src}
@@ -162,14 +172,16 @@ export default function Message({
 
     // File
     if (message.messageType === "file") {
-      const remote = safeHttpUrl(message.content);
-      const href = fileUrl || remote;
+      const direct = safeUrl(message.content);
+      const href = fileUrl || direct;
       const name = fileName || "file";
+
       if (!href) {
         return (
           <span className="text-sm opacity-80">{isDecrypting ? "Decrypting…" : name}</span>
         );
       }
+
       return (
         <a
           href={href}
