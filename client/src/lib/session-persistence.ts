@@ -1,4 +1,3 @@
-
 // session-persistence.ts (SECURE VERSION)
 // No private key persistence in cookies.
 // Only memory + session/local storage.
