@@ -1,52 +1,44 @@
 import React, { useEffect, useMemo, useState } from "react";
 import type { User } from "@shared/schema";
 import { decryptFileV2, decryptBytesWithEnvV2 } from "@/lib/crypto";
-import { Check, CheckCheck, Clock } from "lucide-react";
 
 function toMs(v: any): number {
   const t = new Date(v).getTime();
   return Number.isFinite(t) ? t : 0;
 }
+
 function formatTime(ts: any) {
-  const ms = toMs(ts);
-  const d = new Date(ms || Date.now());
+  const d = new Date(toMs(ts) || Date.now());
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-function formatTtl(seconds: number): string {
-  const s = Math.max(0, Math.floor(seconds));
+function formatTtl(msRemaining: number): string {
+  if (!Number.isFinite(msRemaining)) return "";
+  const s = Math.max(0, Math.ceil(msRemaining / 1000));
   if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
+  const m = Math.ceil(s / 60);
   if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
+  const h = Math.ceil(m / 60);
   if (h < 24) return `${h}h`;
-  const d = Math.floor(h / 24);
+  const d = Math.ceil(h / 24);
   return `${d}d`;
 }
 
-function formatRemaining(ms: number): string {
-  const s = Math.max(0, Math.floor(ms / 1000));
-  return formatTtl(s);
-}
-
 /**
- * ✅ Safe URL helper (FIXED)
- * We allow:
+ * ✅ Safe URL helper
+ * Allow:
  * - absolute http/https URLs
- * - relative URLs starting with "/" (same-origin, e.g. /uploads/... or /api/...)
- * - blob: URLs (created locally)
- *
- * We still BLOCK: javascript:, data:, file:, etc.
+ * - relative URLs starting with "/" (same-origin, e.g. /uploads/..., /api/...)
+ * - blob: URLs
+ * Block:
+ * - javascript:, data:, file:, etc.
  */
 function safeUrl(input: string | null | undefined): string | null {
   if (!input) return null;
   const s = String(input).trim();
   if (!s) return null;
 
-  // allow relative same-origin paths
   if (s.startsWith("/")) return s;
-
-  // allow blob URLs (local object URLs)
   if (s.startsWith("blob:")) return s;
 
   try {
@@ -73,6 +65,22 @@ type Msg = {
   isRead?: boolean | any;
 };
 
+function CheckIcon({ double, filled }: { double: boolean; filled: boolean }) {
+  // simple inline icon; avoids dependencies
+  const cls = filled ? "bg-white/20" : "bg-transparent border border-white/35";
+  return (
+    <span
+      className={`inline-flex items-center justify-center w-5 h-5 rounded-full ${cls}`}
+      aria-label={double ? "read" : "sent"}
+      title={double ? "Gelesen" : "Versendet"}
+    >
+      <span className="text-[10px] leading-none select-none">
+        {double ? "✓✓" : "✓"}
+      </span>
+    </span>
+  );
+}
+
 export default function Message({
   message,
   isOwn,
@@ -84,43 +92,27 @@ export default function Message({
   otherUser: User;
   currentUser: any;
 }) {
-  const createdMs = useMemo(() => toMs(message.createdAt || Date.now()), [message.createdAt]);
-  const expiresMs = useMemo(() => toMs(message.expiresAt), [message.expiresAt]);
+  const createdAtMs = useMemo(() => toMs(message.createdAt) || Date.now(), [message.createdAt]);
+  const expiresAtMs = useMemo(() => toMs(message.expiresAt), [message.expiresAt]);
+  const [now, setNow] = useState(Date.now());
 
-  // ✅ Hard safety: if expired, render nothing (covers sender+receiver even if state didn't update)
-  if (expiresMs && Date.now() >= expiresMs) return null;
+  // Live countdown re-render (cheap, only per message bubble)
+  useEffect(() => {
+    if (!expiresAtMs) return;
+    const t = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(t);
+  }, [expiresAtMs]);
 
-  const time = useMemo(() => formatTime(createdMs), [createdMs]);
+  const isExpired = expiresAtMs ? now >= expiresAtMs : false;
+  if (isExpired) return null;
+
+  const time = useMemo(() => formatTime(createdAtMs), [createdAtMs]);
 
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(message.fileName || null);
   const [isDecrypting, setIsDecrypting] = useState(false);
 
-  const [remaining, setRemaining] = useState<string | null>(null);
-
-  // ✅ Show expiry label (so users know when it disappears)
-  useEffect(() => {
-    if (!expiresMs) {
-      setRemaining(null);
-      return;
-    }
-
-    const tick = () => {
-      const left = expiresMs - Date.now();
-      if (left <= 0) {
-        setRemaining("0s");
-        return;
-      }
-      setRemaining(formatRemaining(left));
-    };
-
-    tick();
-    // Update every second (simple + clear)
-    const t = setInterval(tick, 1000);
-    return () => clearInterval(t);
-  }, [expiresMs]);
-
-  // ✅ Decrypt encrypted file/image envelopes on the fly
+  // ✅ Decrypt encrypted file/image envelopes on the fly (if content is env JSON)
   useEffect(() => {
     let alive = true;
     let revokeUrl: string | null = null;
@@ -186,26 +178,26 @@ export default function Message({
     : "bg-muted/30 border border-border/40 text-foreground mr-auto rounded-2xl rounded-tl-md";
 
   const wrapperClass = isOwn ? "flex justify-end" : "flex justify-start";
-
   const headerLetter = (otherUser?.username || "U").charAt(0).toUpperCase();
 
+  const ttlLabel = useMemo(() => {
+    if (!expiresAtMs) return "";
+    return formatTtl(expiresAtMs - now);
+  }, [expiresAtMs, now]);
+
+  const isRead = Boolean(message.isRead);
+
   const renderBody = () => {
-    // Text (React escapes content by default → XSS-safe)
     if (message.messageType === "text") {
       return <span className="break-words whitespace-pre-wrap">{message.content}</span>;
     }
 
-    // Image
     if (message.messageType === "image") {
       const direct = safeUrl(message.content);
       const src = fileUrl || direct;
-
       if (!src) {
-        return (
-          <span className="text-sm opacity-80">{isDecrypting ? "Decrypting…" : "Image"}</span>
-        );
+        return <span className="text-sm opacity-80">{isDecrypting ? "Decrypting…" : "Image"}</span>;
       }
-
       return (
         <img
           src={src}
@@ -217,18 +209,13 @@ export default function Message({
       );
     }
 
-    // File
     if (message.messageType === "file") {
       const direct = safeUrl(message.content);
       const href = fileUrl || direct;
       const name = fileName || "file";
-
       if (!href) {
-        return (
-          <span className="text-sm opacity-80">{isDecrypting ? "Decrypting…" : name}</span>
-        );
+        return <span className="text-sm opacity-80">{isDecrypting ? "Decrypting…" : name}</span>;
       }
-
       return (
         <a
           href={href}
@@ -242,12 +229,8 @@ export default function Message({
       );
     }
 
-    // Fallback: still XSS-safe (escaped)
     return <span className="break-words whitespace-pre-wrap">{message.content}</span>;
   };
-
-  const isRead = Boolean(message?.isRead);
-  const ReceiptIcon = isRead ? CheckCheck : Check;
 
   return (
     <div className={wrapperClass}>
@@ -260,26 +243,12 @@ export default function Message({
       <div className={`max-w-[78%] md:max-w-[70%] px-4 py-2 ${bubbleClass}`}>
         {renderBody()}
 
-        <div className={`mt-1 flex items-center gap-2 text-[11px] ${isOwn ? "text-white/80" : "text-muted-foreground"} justify-end`}>
-          {remaining && (
-            <span className="inline-flex items-center gap-1">
-              <Clock className="w-3 h-3" />
-              <span>{remaining}</span>
-            </span>
-          )}
-
-          <span>{time}</span>
-
-          {isOwn && (
-            <span
-              className={`inline-flex items-center justify-center w-4 h-4 rounded-full ${
-                isRead ? "bg-white/25" : "bg-white/15"
-              }`}
-              title={isRead ? "Gelesen" : "Gesendet"}
-            >
-              <ReceiptIcon className="w-3 h-3" />
-            </span>
-          )}
+        <div className={`mt-1 flex items-center gap-2 text-[11px] ${isOwn ? "text-white/80" : "text-muted-foreground"}`}>
+          {ttlLabel ? <span title="Selbstzerstörung">{`⏳ ${ttlLabel}`}</span> : null}
+          <span className="ml-auto flex items-center gap-2">
+            <span>{time}</span>
+            {isOwn ? <CheckIcon double={isRead} filled={isRead} /> : null}
+          </span>
         </div>
       </div>
     </div>
