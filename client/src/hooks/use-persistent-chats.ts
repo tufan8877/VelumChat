@@ -36,25 +36,6 @@ function toBool(v: any): boolean {
   return false;
 }
 
-function normId(v: any): number {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
-
-/** Normalize incoming message objects so IDs are numbers and timestamps are consistent. */
-function normalizeMessage(raw: any): any {
-  if (!raw || typeof raw !== "object") return raw;
-  const m = { ...raw };
-  m.id = normId(m.id);
-  m.chatId = normId(m.chatId);
-  m.senderId = normId(m.senderId);
-  m.receiverId = normId(m.receiverId);
-  // common timestamp field variants
-  if (m.expires_at && !m.expiresAt) m.expiresAt = m.expires_at;
-  if (m.created_at && !m.createdAt) m.createdAt = m.created_at;
-  return m;
-}
-
 async function authedFetch(url: string, init?: RequestInit, timeoutMs = 15000) {
   const token = getAuthToken();
   if (!token) throw new Error("Missing token");
@@ -221,49 +202,19 @@ export function usePersistentChats(userId?: number, socket?: any) {
   const scheduleMessageDeletion = useCallback((message: any) => {
     try {
       const expMs = toMs(message?.expiresAt || message?.expires_at);
-
-  // 🔥 Live expiry cleanup (Sender + Receiver): removes expired messages even without refresh.
-  useEffect(() => {
-    const t = setInterval(() => {
-      setActiveMessages((prev) => {
-        let changed = false;
-        const next = new Map(prev);
-        const now = Date.now();
-
-        for (const [chatId, arr] of next.entries()) {
-          if (!Array.isArray(arr) || arr.length === 0) continue;
-          const filtered = arr.filter((m: any) => {
-            const exp = toMs(m?.expiresAt || m?.expires_at);
-            return !exp || exp > now;
-          });
-          if (filtered.length !== arr.length) {
-            next.set(chatId, filtered);
-            changed = true;
-          }
-        }
-
-        return changed ? next : prev;
-      });
-    }, 1000);
-
-    return () => clearInterval(t);
-  }, []);
       if (!expMs) return;
 
       const ms = Math.max(expMs - Date.now(), 200);
-      clearTimer(Number(message.id));
+      clearTimer(message.id);
 
       const timer = setTimeout(() => {
-        setActiveMessages((prev) => {
-          const next = new Map(prev);
-          const arr = next.get(message.chatId) || [];
-          next.set(message.chatId, arr.filter((m: any) => Number(m.id) !== Number(message.id)));
-          return next;
-        });
-        clearTimer(Number(message.id));
+        // ✅ Do NOT remove messages from state here.
+        // Removing items caused UI crashes with very short timers (e.g. 5 seconds).
+        // The <Message /> bubble already hides itself once expiresAt is reached.
+        clearTimer(message.id);
       }, ms);
 
-      deletionTimersRef.current.set(Number(message.id), timer);
+      deletionTimersRef.current.set(message.id, timer);
     } catch {}
   }, []);
 
@@ -450,26 +401,11 @@ export function usePersistentChats(userId?: number, socket?: any) {
 
       // mark read
       try {
-        const r = await authedFetch(
+        await authedFetch(
           `/api/chats/${chat.id}/mark-read`,
           { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) },
           15000
         );
-        // Update local state immediately (receiver side), so ✅✅ can appear without refresh.
-        try {
-          const j: any = await r.json();
-          if (j?.messageIds && Array.isArray(j.messageIds)) {
-            const ids = new Set<number>(j.messageIds.map((x: any) => Number(x)).filter((n: any) => Number.isFinite(n)));
-            if (ids.size) {
-              setActiveMessages((prev) => {
-                const next = new Map(prev);
-                const arr = next.get(chat.id) || [];
-                next.set(chat.id, arr.map((m: any) => (ids.has(Number(m.id)) ? { ...m, isRead: true } : m)));
-                return next;
-              });
-            }
-          }
-        } catch {}
       } catch {}
 
       // clear badge
@@ -774,7 +710,7 @@ export function usePersistentChats(userId?: number, socket?: any) {
 
       // new message
       if (data.type === "new_message" && data.message) {
-        const m: any = normalizeMessage(data.message);
+        const m: any = data.message;
 
         // ✅ Brand-new chat: ensure it appears immediately in the receiver sidebar.
         // If we don't have this chat in our current contacts list yet, refresh silently.
@@ -788,7 +724,7 @@ export function usePersistentChats(userId?: number, socket?: any) {
         }
 
         // receiver only
-        if (Number(m.receiverId) !== Number(userId)) return;
+        if (m.receiverId !== userId) return;
 
         // cutoff
         const cutoffIso = cutoffsRef.current[String(m.chatId)];
@@ -810,25 +746,11 @@ export function usePersistentChats(userId?: number, socket?: any) {
         // ✅ auto-mark read when chat is open (so sender gets ✅✅)
         if (selectedChat && selectedChat.id === m.chatId) {
           try {
-            const r = await authedFetch(
+            await authedFetch(
               `/api/chats/${m.chatId}/mark-read`,
               { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) },
               15000
             );
-            try {
-              const j: any = await r.json();
-              if (j?.messageIds && Array.isArray(j.messageIds)) {
-                const ids = new Set<number>(j.messageIds.map((x: any) => Number(x)).filter((n: any) => Number.isFinite(n)));
-                if (ids.size) {
-                  setActiveMessages((prev) => {
-                    const next = new Map(prev);
-                    const arr = next.get(Number(m.chatId)) || [];
-                    next.set(Number(m.chatId), arr.map((mm: any) => (ids.has(Number(mm.id)) ? { ...mm, isRead: true } : mm)));
-                    return next;
-                  });
-                }
-              }
-            } catch {}
           } catch {}
         }
 
