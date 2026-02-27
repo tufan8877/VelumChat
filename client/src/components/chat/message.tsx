@@ -7,6 +7,19 @@ function toMs(v: any): number {
   const t = new Date(v).getTime();
   return Number.isFinite(t) ? t : 0;
 }
+function toBool(v: any): boolean {
+  if (v === true) return true;
+  if (v === false) return false;
+  if (v === 1 || v === "1") return true;
+  if (v === 0 || v === "0") return false;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    if (s === "true") return true;
+    if (s === "false") return false;
+  }
+  return false;
+}
+
 function formatTime(ts: any) {
   const ms = toMs(ts);
   const d = new Date(ms || Date.now());
@@ -246,7 +259,7 @@ export default function Message({
     return <span className="break-words whitespace-pre-wrap">{message.content}</span>;
   };
 
-  const isRead = message?.isRead === true || message?.isRead === 1 || message?.isRead === "1";
+  const isRead = Boolean(message?.isRead);
   const ReceiptIcon = isRead ? CheckCheck : Check;
 
   return (
