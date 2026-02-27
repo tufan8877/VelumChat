@@ -342,30 +342,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/chats/:chatId/mark-read", requireAuth, async (req: any, res) => {
     try {
       const chatId = toInt(req.params.chatId, 0);
-      const userIdParam = req.auth.userId;
+      const readerId = req.auth.userId;
       if (!chatId) return safeJson(res, 400, { ok: false, message: "chatId required" });
 
-      // ✅ Mark messages as read (for read-receipts) + reset unread badge
-      const messageIds = await storage.markMessagesRead(chatId, userIdParam);
-      await storage.resetUnreadCount(chatId, userIdParam);
+      // 1) reset unread badge counts (existing behavior)
+      await storage.resetUnreadCount(chatId, readerId);
 
-      // ✅ Notify the OTHER participant live (read receipts)
-      try {
-        const chat = await storage.getChat(chatId);
-        if (chat) {
-          const otherUserId =
-            (chat as any).participant1Id === userIdParam ? (chat as any).participant2Id : (chat as any).participant2Id === userIdParam ? (chat as any).participant1Id : null;
+      // 2) mark messages as read in DB (so sender can get ✅✅)
+      const updated = await storage.markMessagesRead(chatId, readerId);
 
-          if (otherUserId) {
-            const otherClient = connectedClients.get(otherUserId);
-            if (otherClient?.ws?.readyState === WebSocket.OPEN) {
-              otherClient.ws.send(JSON.stringify({ type: "messages_read", chatId, messageIds }));
-            }
+      // 3) notify senders in real time (so no refresh needed)
+      if (updated && updated.length > 0) {
+        const bySender = new Map<number, number[]>();
+        for (const row of updated as any[]) {
+          const sid = Number(row.senderId) || 0;
+          const mid = Number(row.id) || 0;
+          if (!sid || !mid) continue;
+          const arr = bySender.get(sid) || [];
+          arr.push(mid);
+          bySender.set(sid, arr);
+        }
+
+        for (const [senderId, messageIds] of bySender.entries()) {
+          const senderClient = connectedClients.get(senderId);
+          if (senderClient?.ws?.readyState === WebSocket.OPEN) {
+            senderClient.ws.send(
+              JSON.stringify({
+                type: "messages_read",
+                chatId,
+                readerId,
+                messageIds,
+              })
+            );
           }
         }
-      } catch {}
+      }
 
-      return res.json({ ok: true, success: true, messageIds });
+      return res.json({ ok: true, success: true, updated: updated?.length || 0 });
     } catch (err) {
       console.error("Mark read error:", err);
       return safeJson(res, 500, { ok: false, message: "Failed to mark chat as read" });
