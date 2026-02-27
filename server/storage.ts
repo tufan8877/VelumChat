@@ -30,8 +30,9 @@ export interface IStorage {
   // Messages
   createMessage(message: InsertMessage & { expiresAt: Date }): Promise<Message>;
   getMessagesByChat(chatId: number): Promise<Message[]>;
+  markMessagesRead(chatId: number, receiverId: number): Promise<number[]>;
+  getChat(chatId: number): Promise<Chat | undefined>;
   deleteExpiredMessages(): Promise<number>;
-  markMessagesRead(chatId: number, readerId: number): Promise<Array<{ id: number; senderId: number }>>;
 
   // Chats
   createChat(chat: InsertChat): Promise<Chat>;
@@ -120,8 +121,30 @@ class DatabaseStorage implements IStorage {
     return await db
       .select()
       .from(messages)
-      .where(and(eq(messages.chatId, chatId), sql`${messages.expiresAt} > ${now}`))
+      .where(and(eq(messages.chatId, chatId), sql`(${messages.expiresAt} is null OR ${messages.expiresAt} > ${now})`))
       .orderBy(asc(messages.createdAt));
+  }
+
+  async markMessagesRead(chatId: number, receiverId: number): Promise<number[]> {
+    const now = new Date();
+    const rows = await db
+      .update(messages)
+      .set({ isRead: true } as any)
+      .where(
+        and(
+          eq(messages.chatId, chatId),
+          eq(messages.receiverId, receiverId),
+          eq(messages.isRead as any, false as any),
+          sql`(${messages.expiresAt} is null OR ${messages.expiresAt} > ${now})`
+        )
+      )
+      .returning({ id: messages.id });
+    return rows.map((r: any) => r.id);
+  }
+
+  async getChat(chatId: number): Promise<Chat | undefined> {
+    const [chat] = await db.select().from(chats).where(eq(chats.id, chatId));
+    return chat as any;
   }
 
   async deleteExpiredMessages(): Promise<number> {
@@ -129,26 +152,6 @@ class DatabaseStorage implements IStorage {
     const result: any = await db.delete(messages).where(sql`${messages.expiresAt} < ${now}`);
     return (result?.rowCount ?? result?.changes ?? 0) as number;
   }
-
-  async markMessagesRead(chatId: number, readerId: number): Promise<Array<{ id: number; senderId: number }>> {
-    const now = new Date();
-    // Mark as read only messages addressed to reader, not already read, and not expired
-    const updated = await db
-      .update(messages)
-      .set({ isRead: true as any })
-      .where(
-        and(
-          eq(messages.chatId, chatId),
-          eq(messages.receiverId, readerId),
-          eq(messages.isRead, false),
-          sql`${messages.expiresAt} > ${now}`
-        )
-      )
-      .returning({ id: messages.id, senderId: messages.senderId });
-
-    return updated as any;
-  }
-
 
   async createChat(chat: InsertChat): Promise<Chat> {
     const [created] = await db.insert(chats).values(chat as any).returning();
