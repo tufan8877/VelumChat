@@ -223,6 +223,35 @@ export function usePersistentChats(userId?: number, socket?: any) {
 
   /**
    * ============================
+   * Periodic expiry cleanup (no refresh needed)
+   * ============================
+   */
+  useEffect(() => {
+    const t = setInterval(() => {
+      const now = Date.now();
+      setActiveMessages((prev) => {
+        let changed = false;
+        const next = new Map(prev);
+        for (const [chatId, arr] of next.entries()) {
+          const filtered = (arr || []).filter((m: any) => {
+            const exp = toMs(m?.expiresAt || m?.expires_at);
+            return !exp || exp > now;
+          });
+          if ((arr || []).length !== filtered.length) {
+            changed = true;
+            next.set(chatId, filtered);
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, 1000);
+
+    return () => clearInterval(t);
+  }, []);
+
+
+  /**
+   * ============================
    * Presence apply helpers
    * ============================
    */
@@ -410,6 +439,25 @@ export function usePersistentChats(userId?: number, socket?: any) {
           15000
         );
       } catch {}
+
+      // ✅ Local mark messages as read in UI (receiver side) so badges + styling update instantly
+      setActiveMessages((prev) => {
+        const next = new Map(prev);
+        const arr = next.get(chat.id) || [];
+        if (!arr.length) return prev;
+        let changed = false;
+        const updatedArr = arr.map((m: any) => {
+          if (Number(m.receiverId) === Number(userId) && !toBool(m.isRead)) {
+            changed = true;
+            return { ...m, isRead: true };
+          }
+          return m;
+        });
+        if (!changed) return prev;
+        next.set(chat.id, updatedArr);
+        return next;
+      });
+
 
       // clear badge
       setUnreadCounts((prev) => {
@@ -693,24 +741,6 @@ export function usePersistentChats(userId?: number, socket?: any) {
         return;
       }
 
-      // read receipts (sender side)
-      if (data.type === "messages_read" && data.chatId && Array.isArray(data.messageIds)) {
-        const chatId = Number(data.chatId);
-        const ids = new Set<number>(data.messageIds.map((x: any) => Number(x)).filter((n: any) => Number.isFinite(n)));
-        if (ids.size) {
-          setActiveMessages((prev) => {
-            const next = new Map(prev);
-            const arr = next.get(chatId) || [];
-            next.set(
-              chatId,
-              arr.map((m: any) => (ids.has(Number(m.id)) ? { ...m, isRead: true } : m))
-            );
-            return next;
-          });
-        }
-        return;
-      }
-
       // new message
       if (data.type === "new_message" && data.message) {
         const m: any = data.message;
@@ -746,17 +776,6 @@ export function usePersistentChats(userId?: number, socket?: any) {
 
         scheduleMessageDeletion(m);
 
-        // ✅ auto-mark read when chat is open (so sender gets ✅✅)
-        if (selectedChat && selectedChat.id === m.chatId) {
-          try {
-            await authedFetch(
-              `/api/chats/${m.chatId}/mark-read`,
-              { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) },
-              15000
-            );
-          } catch {}
-        }
-
         // update list instantly
         bumpChatToTopAndUpdateLast(m.chatId, {
           id: m.id,
@@ -777,6 +796,34 @@ export function usePersistentChats(userId?: number, socket?: any) {
 
         return;
       }
+
+      // ✅ read receipts from server (sender-side update)
+      if (data.type === "messages_read") {
+        const chatId = Number(data.chatId) || 0;
+        const messageIds: number[] = Array.isArray(data.messageIds)
+          ? data.messageIds.map((x: any) => Number(x)).filter(Boolean)
+          : [];
+        if (!chatId || messageIds.length === 0) return;
+
+        setActiveMessages((prev) => {
+          const next = new Map(prev);
+          const arr = next.get(chatId) || [];
+          let changed = false;
+          const setIds = new Set(messageIds);
+          const updatedArr = arr.map((m: any) => {
+            if (setIds.has(Number(m.id))) {
+              if (!toBool(m.isRead)) changed = true;
+              return { ...m, isRead: true };
+            }
+            return m;
+          });
+          if (changed) next.set(chatId, updatedArr);
+          return next;
+        });
+
+        return;
+      }
+
     },
     [
       userId,
