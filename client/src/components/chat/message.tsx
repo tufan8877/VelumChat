@@ -117,20 +117,8 @@ export default function Message({
       setRemaining(null);
       return;
     }
-
-    const tick = () => {
-      const left = expiresMs - Date.now();
-      if (left <= 0) {
-        setRemaining("0s");
-        return;
-      }
-      setRemaining(formatRemaining(left));
-    };
-
-    tick();
-    // Update every second (simple + clear)
-    const t = setInterval(tick, 1000);
-    return () => clearInterval(t);
+    const left = expiresMs - Date.now();
+    setRemaining(left > 0 ? formatRemaining(left) : "0s");
   }, [expiresMs]);
 
   // ✅ Decrypt encrypted file/image envelopes on the fly
