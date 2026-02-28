@@ -76,6 +76,20 @@ export default function ChatView({
     return `${Math.floor(seconds / 86400)}d`;
   };
 
+  const toMs = (v: any) => {
+    const t = new Date(v).getTime();
+    return Number.isFinite(t) ? t : 0;
+  };
+
+  // ✅ Render-time expiry filter (no state mutation → no crashes)
+  const filteredMessages = useMemo(() => {
+    const now = Date.now();
+    return (messages || []).filter((m: any) => {
+      const exp = toMs(m?.expiresAt || m?.expires_at);
+      return !exp || exp > now;
+    });
+  }, [messages]);
+
   const isNearBottom = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return true;
@@ -99,7 +113,7 @@ export default function ChatView({
   // Bei neuen Nachrichten nur autoscroll, wenn User eh unten ist
   useEffect(() => {
     if (!selectedChat) return;
-    if (messages.length === 0) return;
+    if (filteredMessages.length === 0) return;
     if (isNearBottom()) {
       const id = window.setTimeout(() => scrollToBottom(false), 0);
       return () => window.clearTimeout(id);
@@ -395,7 +409,7 @@ export default function ChatView({
           </div>
         </div>
 
-        {messages.map((m) => (
+        {filteredMessages.map((m) => (
           <Message key={m.id} message={m as any} isOwn={m.senderId === currentUser.id} otherUser={selectedChat.otherUser} currentUser={currentUser as any} />
         ))}
 
