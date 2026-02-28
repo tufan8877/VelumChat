@@ -427,7 +427,26 @@ export function usePersistentChats(userId?: number, socket?: any) {
     [userId, loadActiveMessages]
   );
 
+  
   /**
+   * ============================
+   * Live read-receipt sync (no refresh)
+   * ============================
+   * If WS read events are missed (e.g., multi-instance deploy), we still update quickly.
+   */
+  useEffect(() => {
+    if (!selectedChat || !userId) return;
+
+    const chatId = selectedChat.id;
+    const t = window.setInterval(() => {
+      // refresh active messages silently to pick up isRead changes + expiresAt updates
+      loadActiveMessages(chatId).catch(() => {});
+    }, 3000);
+
+    return () => window.clearInterval(t);
+  }, [selectedChat?.id, userId, loadActiveMessages]);
+
+/**
    * ============================
    * Delete Chat (FAST + silent refresh)
    * ============================
