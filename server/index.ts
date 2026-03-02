@@ -4,7 +4,6 @@ import { setupVite, serveStatic, log } from "./vite";
 import helmet from "helmet";
 import path from "path";
 
-
 const app = express();
 
 /**
@@ -28,7 +27,6 @@ app.use(
   })
 );
 
-
 /**
  * ✅ HARD FAIL wenn wichtige ENV fehlt
  * Sonst bekommst du später "secretOrPrivateKey must have a value"
@@ -49,20 +47,21 @@ app.use(express.urlencoded({ extended: false }));
  */
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
-
 /**
  * ✅ CORS (korrekt für credentials: "include")
- * - Kein "*", wenn Cookies/Sessions/JWT-Cookies genutzt werden
- * - Allow-Credentials muss true sein
  *
- * ✅ FIX: Erlaubt automatisch die aktuelle Render-Domain (same host),
- * plus optional zusätzliche Origins per ENV: ALLOWED_ORIGINS
+ * FIX: In Produktion ist req.headers.host / x-forwarded-host manchmal eine interne Render-Adresse
+ * (z.B. velumchat-vk3:10000). Dann würde sameHost=false sein und CORS blockt.
+ *
+ * Deshalb: wir erlauben deine echten Domains explizit.
  */
 app.use((req, res, next) => {
   const origin = req.headers.origin as string | undefined;
 
   // Basis-Whitelist
   const allowedOrigins = new Set<string>([
+    "https://www.velumchat.com",
+    "https://velumchat.com",
     "https://whisper3.onrender.com",
     "https://velumchat.onrender.com",
     "https://velumchat-main.onrender.com",
@@ -77,7 +76,7 @@ app.use((req, res, next) => {
     .filter(Boolean);
   for (const o of extra) allowedOrigins.add(o);
 
-  // Render/Proxy Headers berücksichtigen
+  // Render/Proxy Headers berücksichtigen (nur als Bonus)
   const forwardedHost =
     (req.headers["x-forwarded-host"] as string | undefined) || req.headers.host;
 
