@@ -113,6 +113,11 @@ class DatabaseStorage implements IStorage {
 
   async createMessage(message: InsertMessage & { expiresAt: Date }): Promise<Message> {
     const [msg] = await db.insert(messages).values(message as any).returning();
+
+    // ✅ Server-side unread counter: every stored message increases the receiver's badge.
+    // This makes unread counts correct after refresh, reconnect, or when the receiver is offline.
+    await this.incrementUnreadCount((msg as any).chatId, (msg as any).receiverId);
+
     return msg;
   }
 
