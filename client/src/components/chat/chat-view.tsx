@@ -8,6 +8,8 @@ import Message from "./message";
 import { Paperclip, Send, Smile, Lock, Clock, MoreVertical, Shield, ArrowLeft, Trash2, UserX } from "lucide-react";
 import type { User, Chat, Message as MessageType } from "@shared/schema";
 
+const DEFAULT_DESTRUCT_TIMER_SECONDS = 604800; // 7 days
+
 interface ChatViewProps {
   currentUser: User;
   selectedChat: (Chat & { otherUser: User }) | null;
@@ -37,7 +39,7 @@ export default function ChatView({
   onUnblockUser,
 }: ChatViewProps) {
   const [messageInput, setMessageInput] = useState("");
-  const [destructTimer, setDestructTimer] = useState("300");
+  const [destructTimer, setDestructTimer] = useState(String(DEFAULT_DESTRUCT_TIMER_SECONDS));
 
   const [blockedByMe, setBlockedByMe] = useState(false);
   const [blockedMe, setBlockedMe] = useState(false);
@@ -66,7 +68,7 @@ export default function ChatView({
 
   const getTimerSeconds = () => {
     const s = parseInt(destructTimer, 10);
-    return Number.isFinite(s) ? s : 300;
+    return Number.isFinite(s) ? s : DEFAULT_DESTRUCT_TIMER_SECONDS;
   };
 
   const formatDestructTimer = (seconds: number) => {
@@ -349,7 +351,8 @@ export default function ChatView({
                   <SelectItem value="3600">1 hour</SelectItem>
                   <SelectItem value="21600">6 hours</SelectItem>
                   <SelectItem value="86400">1 day</SelectItem>
-                  <SelectItem value="604800">1 week</SelectItem>
+                  <SelectItem value="259200">3 days</SelectItem>
+                  <SelectItem value="604800">7 days</SelectItem>
                 </SelectContent>
               </Select>
             </div>
