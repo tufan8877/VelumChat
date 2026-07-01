@@ -8,8 +8,6 @@ import Message from "./message";
 import { Paperclip, Send, Smile, Lock, Clock, MoreVertical, Shield, ArrowLeft, Trash2, UserX } from "lucide-react";
 import type { User, Chat, Message as MessageType } from "@shared/schema";
 
-const DEFAULT_DESTRUCT_TIMER_SECONDS = 604800; // 7 days
-
 interface ChatViewProps {
   currentUser: User;
   selectedChat: (Chat & { otherUser: User }) | null;
@@ -39,7 +37,7 @@ export default function ChatView({
   onUnblockUser,
 }: ChatViewProps) {
   const [messageInput, setMessageInput] = useState("");
-  const [destructTimer, setDestructTimer] = useState(String(DEFAULT_DESTRUCT_TIMER_SECONDS));
+  const [destructTimer, setDestructTimer] = useState("300");
 
   const [blockedByMe, setBlockedByMe] = useState(false);
   const [blockedMe, setBlockedMe] = useState(false);
@@ -55,7 +53,6 @@ export default function ChatView({
     }
   };
 
-
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -68,7 +65,7 @@ export default function ChatView({
 
   const getTimerSeconds = () => {
     const s = parseInt(destructTimer, 10);
-    return Number.isFinite(s) ? s : DEFAULT_DESTRUCT_TIMER_SECONDS;
+    return Number.isFinite(s) ? s : 300;
   };
 
   const formatDestructTimer = (seconds: number) => {
@@ -83,7 +80,6 @@ export default function ChatView({
     return Number.isFinite(t) ? t : 0;
   };
 
-  // ✅ Render-time expiry filter (no state mutation → no crashes)
   const filteredMessages = useMemo(() => {
     const now = Date.now();
     return (messages || []).filter((m: any) => {
@@ -100,19 +96,15 @@ export default function ChatView({
   }, []);
 
   const scrollToBottom = useCallback((smooth = false) => {
-    // smooth auf iOS kann manchmal "springen" -> default false ist stabiler
     messagesEndRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "end" });
   }, []);
 
-  // Beim Chat öffnen sofort nach unten (damit Input + letzte Nachricht sichtbar sind)
   useLayoutEffect(() => {
     if (!selectedChat) return;
-    // kleiner Delay, damit Layout fix ist
     const id = window.setTimeout(() => scrollToBottom(false), 0);
     return () => window.clearTimeout(id);
   }, [selectedChat?.id, scrollToBottom]);
 
-  // Bei neuen Nachrichten nur autoscroll, wenn User eh unten ist
   useEffect(() => {
     if (!selectedChat) return;
     if (filteredMessages.length === 0) return;
@@ -122,7 +114,6 @@ export default function ChatView({
     }
   }, [messages, selectedChat, isNearBottom, scrollToBottom]);
 
-  // Typing-Indikator: nur wenn unten
   useEffect(() => {
     if (!selectedChat) return;
     if (isOtherTyping && isNearBottom()) {
@@ -180,7 +171,6 @@ export default function ChatView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedChat?.id]);
 
-  // ✅ Fetch block status for selected user (so we can disable sending + show Unblock)
   useEffect(() => {
     const run = async () => {
       if (!selectedChat?.otherUser?.id) {
@@ -207,7 +197,6 @@ export default function ChatView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedChat?.id]);
 
-
   const handleSendMessage = () => {
     const text = messageInput.trim();
     if (!text || !selectedChat) return;
@@ -226,7 +215,6 @@ export default function ChatView({
     onSendMessage(text, "text", getTimerSeconds());
     setMessageInput("");
 
-    // nach senden fix nach unten
     setTimeout(() => scrollToBottom(false), 30);
   };
 
@@ -301,12 +289,10 @@ export default function ChatView({
   const statusText = !isConnected ? t("connecting") : otherOnline ? t("online") : t("offline");
 
   return (
-    // ✅ WICHTIG: feste Viewport-Höhe, damit Header nicht "wegscrollt" (iOS fix)
     <div
       className="w-full overflow-x-hidden bg-background"
       style={{ height: "100dvh", display: "flex", flexDirection: "column" }}
     >
-      {/* ✅ Header bleibt oben sichtbar */}
       <div className="sticky top-0 z-20 flex-shrink-0 w-full bg-background border-b border-border px-3 py-3 md:px-4 md:py-4">
         <div className="flex items-center justify-between gap-2 w-full">
           <div className="flex items-center gap-2 min-w-0">
@@ -351,8 +337,7 @@ export default function ChatView({
                   <SelectItem value="3600">1 hour</SelectItem>
                   <SelectItem value="21600">6 hours</SelectItem>
                   <SelectItem value="86400">1 day</SelectItem>
-                  <SelectItem value="259200">3 days</SelectItem>
-                  <SelectItem value="604800">7 days</SelectItem>
+                  <SelectItem value="604800">1 week</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -400,7 +385,6 @@ export default function ChatView({
         </div>
       </div>
 
-      {/* ✅ NUR Messages scrollen */}
       <div
         ref={scrollRef}
         className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden custom-scrollbar px-3 md:px-4 py-3 space-y-3"
@@ -434,7 +418,6 @@ export default function ChatView({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* ✅ Input bleibt immer sichtbar */}
       <div
         className="sticky bottom-0 z-20 w-full bg-background border-t border-border"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
