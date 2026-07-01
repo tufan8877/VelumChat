@@ -16,4 +16,5 @@ patchFile('client/src/components/chat/chat-view.tsx', [
 
 patchFile('server/routes.ts', [
   ['if (t > 100000) t = Math.floor(t / 1000);', 'if (t > 7 * 24 * 60 * 60 * 1000) t = Math.floor(t / 1000);'],
+  ['if (origin && !(sameHost || allowedOrigins.has(origin))) {', 'if (origin && !(sameHost || allowedOrigins.has(origin) || origin.endsWith(".onrender.com"))) {'],
 ]);
