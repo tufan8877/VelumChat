@@ -96,7 +96,10 @@ export default function ChatView({
   }, []);
 
   const scrollToBottom = useCallback((smooth = false) => {
-    messagesEndRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "end" });
+    // Scroll only the message list; scrollIntoView can also move the page
+    // and fight the browser's keyboard/caret positioning on mobile.
+    const list = scrollRef.current;
+    list?.scrollTo({ top: list.scrollHeight, behavior: smooth ? "smooth" : "auto" });
   }, []);
 
   useLayoutEffect(() => {
@@ -290,8 +293,7 @@ export default function ChatView({
 
   return (
     <div
-      className="w-full overflow-x-hidden bg-background"
-      style={{ height: "100dvh", display: "flex", flexDirection: "column" }}
+      className="h-full min-h-0 w-full overflow-hidden bg-background flex flex-col"
     >
       <div className="sticky top-0 z-20 flex-shrink-0 w-full bg-background border-b border-border px-3 py-3 md:px-4 md:py-4">
         <div className="flex items-center justify-between gap-2 w-full">
@@ -419,7 +421,7 @@ export default function ChatView({
       </div>
 
       <div
-        className="sticky bottom-0 z-20 w-full bg-background border-t border-border"
+        className="flex-shrink-0 z-20 w-full bg-background border-t border-border"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <div className="px-2 pt-2 flex items-end gap-2 flex-nowrap">
@@ -449,7 +451,7 @@ export default function ChatView({
               value={messageInput}
               onChange={(e) => handleInputChange(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="chat-textarea resize-none pr-10"
+              className="chat-textarea resize-none pr-10 !text-base"
               rows={1}
             />
             <Button

@@ -155,7 +155,7 @@ export default function WhatsAppSidebar({
 
   return (
     <>
-      <div className="w-full md:w-80 bg-background border-r border-border flex flex-col h-full md:h-screen">
+      <div className="w-full md:w-80 bg-background border-r border-border flex flex-col h-full min-h-0">
         <div className="p-4 bg-primary/5 dark:bg-primary/10 border-b border-border">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">

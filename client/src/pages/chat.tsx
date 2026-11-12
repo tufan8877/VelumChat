@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useCallback } from "react";
 import { useLocation } from "wouter";
 import WhatsAppSidebar from "@/components/chat/whatsapp-sidebar";
 import ChatView from "@/components/chat/chat-view";
@@ -22,8 +22,37 @@ function getToken(): string | null {
 export default function ChatPage() {
   const [, setLocation] = useLocation();
   const [showSettings, setShowSettings] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const [currentUser, setCurrentUser] = useState<(User & { privateKey: string; token?: string }) | null>(null);
+
+  useLayoutEffect(() => {
+    if (!currentUser) return;
+    const viewport = window.visualViewport;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    let frame = 0;
+    const updateViewport = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const container = containerRef.current;
+        if (!container) return;
+        container.style.height = `${viewport?.height ?? window.innerHeight}px`;
+        container.style.top = `${viewport?.offsetTop ?? 0}px`;
+      });
+    };
+    updateViewport();
+    viewport?.addEventListener("resize", updateViewport);
+    viewport?.addEventListener("scroll", updateViewport);
+    window.addEventListener("resize", updateViewport);
+    return () => {
+      cancelAnimationFrame(frame);
+      viewport?.removeEventListener("resize", updateViewport);
+      viewport?.removeEventListener("scroll", updateViewport);
+      window.removeEventListener("resize", updateViewport);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [currentUser?.id]);
 
   useEffect(() => {
     const initializeUser = async () => {
@@ -139,9 +168,9 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="min-h-screen w-full max-w-full overflow-x-hidden flex flex-col md:flex-row bg-background chat-container">
+    <div ref={containerRef} className="fixed inset-x-0 top-0 h-dvh min-h-0 w-full max-w-full overflow-hidden flex flex-col md:flex-row bg-background chat-container">
       <div
-        className={`${selectedChat ? "hidden md:flex" : "flex"} md:flex w-full md:w-[380px] min-w-0 max-w-full overflow-x-hidden`}
+        className={`${selectedChat ? "hidden md:flex" : "flex"} md:flex h-full min-h-0 w-full md:w-[380px] min-w-0 max-w-full overflow-x-hidden`}
       >
         <WhatsAppSidebar
           currentUser={currentUser}
@@ -167,7 +196,7 @@ export default function ChatPage() {
       </div>
 
       <div
-        className={`${selectedChat ? "flex" : "hidden md:flex"} flex-1 min-w-0 w-full max-w-full overflow-x-hidden chat-safe`}
+        className={`${selectedChat ? "flex" : "hidden md:flex"} flex-1 h-full min-h-0 min-w-0 w-full max-w-full overflow-hidden chat-safe`}
       >
         <ChatView
           currentUser={currentUser}
