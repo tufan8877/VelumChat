@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 
 function getAuthToken(): string | null {
   try {
@@ -74,7 +74,7 @@ export function useWebSocketReliable(userId?: number) {
           emit("message", data);
 
           // ✅ Also emit the specific typed channel for components that subscribe to it.
-          if (data?.type) emit(data.type, data);
+          if (data?.type && data.type !== "message") emit(data.type, data);
         } catch (e) {
           console.error("❌ WS parse error:", e);
         }
@@ -142,5 +142,5 @@ export function useWebSocketReliable(userId?: number) {
     eventHandlersRef.current.set(event, handlers);
   }, []);
 
-  return { isConnected, send, on, off };
+  return useMemo(() => ({ isConnected, send, on, off }), [isConnected, send, on, off]);
 }

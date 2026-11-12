@@ -86,7 +86,7 @@ type Msg = {
   isRead?: boolean | any;
 };
 
-export default function Message({
+function Message({
   message,
   isOwn,
   otherUser,
@@ -101,7 +101,6 @@ export default function Message({
   const expiresMs = useMemo(() => toMs(message.expiresAt), [message.expiresAt]);
 
   // ✅ Hard safety: if expired, render nothing (covers sender+receiver even if state didn't update)
-  if (expiresMs && Date.now() >= expiresMs) return null;
 
   const time = useMemo(() => formatTime(createdMs), [createdMs]);
 
@@ -181,6 +180,8 @@ export default function Message({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [message.id, message.content, message.messageType, currentUser?.privateKey]);
+
+  if (expiresMs && Date.now() >= expiresMs) return null;
 
   const bubbleClass = isOwn
     ? "bg-blue-600 text-white ml-auto rounded-2xl rounded-tr-md"
@@ -286,3 +287,5 @@ export default function Message({
     </div>
   );
 }
+
+export default React.memo(Message);

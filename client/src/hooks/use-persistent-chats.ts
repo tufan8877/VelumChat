@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { reconcileRecords } from "@/lib/reconcile-records";
 import type { User, Chat, Message } from "@shared/schema";
 
 /**
@@ -205,12 +206,16 @@ export function usePersistentChats(userId?: number, socket?: any) {
       if (!expMs) return;
 
       const ms = Math.max(expMs - Date.now(), 200);
-      clearTimer(message.id);
+      if (deletionTimersRef.current.has(message.id)) return;
 
       const timer = setTimeout(() => {
-        // ✅ Do NOT remove messages from state here.
-        // Removing items caused UI crashes with very short timers (e.g. 5 seconds).
-        // The <Message /> bubble already hides itself once expiresAt is reached.
+        setActiveMessages((prev) => {
+          const current = prev.get(message.chatId);
+          if (!current?.some((item) => item.id === message.id)) return prev;
+          const next = new Map(prev);
+          next.set(message.chatId, current.filter((item) => item.id !== message.id));
+          return next;
+        });
         clearTimer(message.id);
       }, ms);
 
@@ -316,7 +321,7 @@ export function usePersistentChats(userId?: number, socket?: any) {
             const cur = next.get(chatId) || 0;
             next.set(chatId, Math.max(cur, cnt));
           }
-          return next;
+          return next.size === prev.size && [...next].every(([id, count]) => prev.get(id) === count) ? prev : next;
         });
 
         // sort
@@ -333,7 +338,7 @@ export function usePersistentChats(userId?: number, socket?: any) {
           return { ...c, otherUser: { ...c.otherUser, isOnline: online } };
         });
 
-        setPersistentContacts(withPresence);
+        setPersistentContacts((prev) => reconcileRecords(prev, withPresence));
       } catch (e) {
         console.error("❌ fetchContacts:", e);
         if (showSpinner) setPersistentContacts([]);
@@ -370,19 +375,18 @@ export function usePersistentChats(userId?: number, socket?: any) {
         const msgs = filterByCutoff(chatId, Array.isArray(msgsRaw) ? msgsRaw : [], cutoffIso);
 
         setActiveMessages((prev) => {
+          const current = prev.get(chatId) || [];
+          const reconciled = reconcileRecords(current, msgs);
+          if (reconciled === current) return prev;
           const next = new Map(prev);
-          next.set(chatId, msgs);
+          next.set(chatId, reconciled);
           return next;
         });
 
         msgs.forEach((m: any) => scheduleMessageDeletion(m));
       } catch (e) {
         console.error(`❌ loadActiveMessages chat=${chatId}:`, e);
-        setActiveMessages((prev) => {
-          const next = new Map(prev);
-          next.set(chatId, []);
-          return next;
-        });
+        // Keep the current conversation visible on a transient network error.
       }
     },
     [scheduleMessageDeletion]
@@ -435,16 +439,33 @@ export function usePersistentChats(userId?: number, socket?: any) {
    * If WS read events are missed (e.g., multi-instance deploy), we still update quickly.
    */
   useEffect(() => {
-    if (!selectedChat || !userId) return;
-
-    const chatId = selectedChat.id;
-    const t = window.setInterval(() => {
-      // refresh active messages silently to pick up isRead changes + expiresAt updates
-      loadActiveMessages(chatId).catch(() => {});
-    }, 3000);
-
-    return () => window.clearInterval(t);
-  }, [selectedChat?.id, userId, loadActiveMessages]);
+    if (!userId) return;
+    let stopped = false;
+    let busy = false;
+    const sync = async () => {
+      if (stopped || busy || document.visibilityState === "hidden") return;
+      busy = true;
+      try {
+        await Promise.all([
+          refreshContactsSilently(),
+          selectedChat?.id ? loadActiveMessages(selectedChat.id) : Promise.resolve(),
+        ]);
+      } finally {
+        busy = false;
+      }
+    };
+    // WebSocket delivers live updates; polling only recovers missed events.
+    const timer = window.setInterval(() => { void sync(); }, socket?.isConnected ? 15000 : 5000);
+    const onVisible = () => { void sync(); };
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [userId, selectedChat?.id, socket?.isConnected, refreshContactsSilently, loadActiveMessages]);
 
 /**
    * ============================
@@ -515,7 +536,7 @@ export function usePersistentChats(userId?: number, socket?: any) {
         isTyping: Boolean(isTyping),
       });
     },
-    [selectedChat, userId, socket]
+    [selectedChat, userId, socket?.send]
   );
 
   /**
@@ -636,6 +657,7 @@ export function usePersistentChats(userId?: number, socket?: any) {
 
   const setTypingState = useCallback((chatId: number, isTyping: boolean) => {
     setTypingByChat((prev) => {
+      if (Boolean(prev.get(chatId)) === isTyping) return prev;
       const next = new Map(prev);
       if (isTyping) next.set(chatId, true);
       else next.delete(chatId);
@@ -813,17 +835,9 @@ export function usePersistentChats(userId?: number, socket?: any) {
       void handleWSData(d);
     };
 
-    socket.on("online_users", handler);
-    socket.on("user_status", handler);
-    socket.on("profile_updated", handler);
-    socket.on("typing", handler);
     socket.on("message", handler);
 
     return () => {
-      socket.off?.("online_users", handler);
-      socket.off?.("user_status", handler);
-      socket.off?.("profile_updated", handler);
-      socket.off?.("typing", handler);
       socket.off?.("message", handler);
     };
   }, [socket, userId, handleWSData]);
